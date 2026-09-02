@@ -118,12 +118,16 @@ st.markdown(
     """
 Interaktive Demo zu einem automatisierten Hochregallager: Ware bewegt sich durch mehrere
 **Zonen** (Regalgassen-Shuttles + ein zentraler Verteiler/Lift). Jeder Transporter bleibt in
-seiner eigenen Zone - Aufträge, die zonenübergreifend müssen, "steigen" an einem
-**Umschlagpunkt** auf den nächsten Transporter um. Kernthema ist, wie stark **lokal optimale
-Disposition je Zone** an Umschlagpunkten Wartezeit erzeugt, die sich kaskadenartig
-fortpflanzt - und wie viel eine **zonenübergreifend koordinierte Disposition** davon
-vermeidet. Hintergrund im Expander "Wie funktioniert diese Demo?" unten sowie formal
-hergeleitet im Expander "📐 Mathematische Formulierung".
+seiner eigenen Zone - ein Shuttle aus Gasse 2 fährt nie in Gasse 4. Muss eine Palette von
+Gasse 2 zum Wareneingang in Gasse 4, wird sie am zentralen Verteiler (Hub) von einem
+Gassen-Shuttle auf den Hub-Transporter umgeladen und später am Zielgassen-Anschluss noch
+einmal - jede dieser Übergaben ist ein **Umschlagpunkt**. Kernthema ist, wie stark **lokal
+optimale Disposition je Zone** an solchen Umschlagpunkten Wartezeit erzeugt, die sich
+kaskadenartig fortpflanzt - und wie viel eine **zonenübergreifend koordinierte Disposition**
+davon vermeidet, *ohne* dabei die Gesamtdurchlaufzeit zu verschlechtern. Ein konkretes
+Beispiel dazu im Abschnitt "📐 Warum lokale Optimierung an Umschlagpunkten scheitert" unten,
+der komplette Ablauf eines Auftrags im Expander "Wie funktioniert diese Demo?" sowie die
+Formalisierung im Expander "📐 Mathematische Formulierung".
 """
 )
 
@@ -146,19 +150,55 @@ with st.sidebar:
     st.header("⚙️ Einstellungen")
 
     st.markdown("**Lagerlayout**")
-    n_aisles = st.slider("Anzahl Gassen-Zonen", *bounds("n_aisles_slider"), key="n_aisles_slider")
-    nodes_per_aisle = st.slider("Knoten je Gasse", *bounds("nodes_per_aisle_slider"), key="nodes_per_aisle_slider")
-    hub_nodes = st.slider("Knoten im Verteiler/Hub", *bounds("hub_nodes_slider"), key="hub_nodes_slider")
+    n_aisles = st.slider(
+        "Anzahl Gassen-Zonen", *bounds("n_aisles_slider"), key="n_aisles_slider",
+        help="Anzahl unabhängiger Regalgassen, jede mit eigener Shuttle-Flotte, alle an "
+             "denselben zentralen Verteiler (Hub) angebunden.",
+    )
+    nodes_per_aisle = st.slider(
+        "Knoten je Gasse", *bounds("nodes_per_aisle_slider"), key="nodes_per_aisle_slider",
+        help="Länge einer Regalgasse in Lagerplätzen - mehr Knoten bedeuten längere "
+             "Fahrzeiten innerhalb der Gasse.",
+    )
+    hub_nodes = st.slider(
+        "Knoten im Verteiler/Hub", *bounds("hub_nodes_slider"), key="hub_nodes_slider",
+        help="Länge der zentralen Förderstrecke. Wenige Knoten + viele Gassen bedeuten, "
+             "dass sich mehrere Gassen denselben, kurzen Hub-Abschnitt teilen - typischer "
+             "Engpass, siehe Preset 'Stoßzeit mit Engpass am Umschlagpunkt'.",
+    )
 
     st.markdown("**Transporter**")
-    trans_aisle = st.slider("Shuttle je Gasse", *bounds("trans_aisle_slider"), key="trans_aisle_slider")
-    trans_hub = st.slider("Transporter im Hub", *bounds("trans_hub_slider"), key="trans_hub_slider")
-    handover = st.slider("Umstiegszeit (min)", *bounds("handover_slider"), key="handover_slider")
+    trans_aisle = st.slider(
+        "Shuttle je Gasse", *bounds("trans_aisle_slider"), key="trans_aisle_slider",
+        help="Wie viele Shuttle gleichzeitig in derselben Gasse unterwegs sein dürfen - "
+             "mehr Shuttle verringern Warteschlangen innerhalb der Gasse.",
+    )
+    trans_hub = st.slider(
+        "Transporter im Hub", *bounds("trans_hub_slider"), key="trans_hub_slider",
+        help="Wie viele Transporter gleichzeitig im zentralen Verteiler unterwegs sein "
+             "dürfen. Ein einzelner Hub-Transporter ist in diesem Modell der typische "
+             "Engpass, an dem sich lokale und koordinierte Disposition am stärksten "
+             "unterscheiden.",
+    )
+    handover = st.slider(
+        "Umstiegszeit (min)", *bounds("handover_slider"), key="handover_slider",
+        help="Feste Zeit, die eine Übergabe an einem Umschlagpunkt braucht (Andocken, "
+             "Lift, Förderband) - fällt bei jedem Zonenwechsel zusätzlich zur Fahrzeit an.",
+    )
 
     st.markdown("**Aufträge**")
     n_orders = st.slider("Anzahl Aufträge", *bounds("n_orders_slider"), key="n_orders_slider")
-    horizon = st.slider("Zeithorizont (min)", *bounds("horizon_slider"), key="horizon_slider")
-    cross_zone = st.slider("Anteil zonenübergreifend", *bounds("cross_zone_slider"), key="cross_zone_slider")
+    horizon = st.slider(
+        "Zeithorizont (min)", *bounds("horizon_slider"), key="horizon_slider",
+        help="Zeitraum, über den die Release-Zeiten der Aufträge verteilt werden - kürzerer "
+             "Horizont bei gleicher Auftragszahl bedeutet mehr gleichzeitigen Andrang.",
+    )
+    cross_zone = st.slider(
+        "Anteil zonenübergreifend", *bounds("cross_zone_slider"), key="cross_zone_slider",
+        help="Anteil der Aufträge, deren Ziel in einer anderen Gasse liegt als der Ursprung "
+             "- nur diese durchlaufen überhaupt einen Umschlagpunkt. Bei 0 gibt es keine "
+             "Umstiege und alle vier Verfahren liefern dasselbe Ergebnis.",
+    )
     seed_lo, seed_hi = bounds("seed_input")
     seed = st.number_input("Zufalls-Seed", min_value=seed_lo, max_value=seed_hi, step=1, key="seed_input")
 
@@ -231,12 +271,19 @@ Alle drei eigenen Verfahren unten lösen **exakt dasselbe Szenario** (gleicher L
 gleiche Transporterzahl, gleiche Aufträge) - sie unterscheiden sich nur darin, in welcher
 Reihenfolge ein frei werdender Transporter unter mehreren wartenden Aufträgen wählt.
 **Dezentral/Greedy** wählt lokal je Zone die kürzeste Fahrzeit des aktuellen Legs (Shortest
-Processing Time) - blind dafür, wie viel Reise ein Auftrag insgesamt noch vor sich hat.
-**Koordiniert** übernimmt dasselbe SPT-Prinzip als dominantes Kriterium, gewichtet die
-Priorität aber zusätzlich leicht mit der restlichen Reise des Auftrags über alle Zonen
-hinweg - genug, um einen fast fertigen Auftrag nicht laufend von frischeren Aufträgen mit
-marginal kürzerem aktuellem Leg überholen zu lassen, ohne den Effizienzvorteil von SPT
-selbst zu verlieren.
+Processing Time, SPT) - blind dafür, wie viel Reise ein Auftrag insgesamt noch vor sich hat.
+
+**Ein Beispiel macht sichtbar, wo das schiefgeht:** Auftrag A ist schon einmal umgestiegen
+und wartet am Hub nur noch auf seinen letzten, kurzen Leg zur Zielgasse. Zur selben Zeit wird
+Auftrag B frisch freigegeben - sein allererster Leg ist rein zufällig eine Idee kürzer als A's
+letzter Leg. Greedy sieht in der Hub-Zone nur die beiden Legs vor sich und ihre Dauer, nicht
+die Vorgeschichte der Aufträge - also gewinnt B, obwohl A eigentlich fast fertig ist. A wartet
+länger, genau die Wartezeit, die vorher schon einmal an Umstieg 1 entstanden ist, addiert sich
+so zu Umstieg 2. **Koordiniert** wägt zusätzlich leicht ab, wie viel Reise nach diesem Leg noch
+übrig bleibt (10 % Gewicht neben der SPT-Fahrzeit) - genug, damit A den knappen Vorsprung
+zurückbekommt, ohne dass Koordiniert deshalb insgesamt schlechter disponiert als Greedy: SPT
+bleibt das Hauptkriterium, weil es für die Gesamtdurchlaufzeit einer einzelnen Ressource
+nachweislich das Beste ist.
 """
 )
 core_evals = {"baseline": evaluations["baseline"], "greedy": greedy_eval, "coordinated": coordinated_eval}
@@ -269,8 +316,10 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
 
     with tabs[3]:
         st.markdown(
-            "Exakter bzw. näherungsweise optimaler Solver (Google OR-Tools, CP-SAT). Button-gesteuert, da "
-            "rechenintensiver als die eigenen Heuristiken."
+            "Googles Open-Source-Solver OR-Tools (CP-SAT) plant nicht Schritt für Schritt wie die drei "
+            "Heuristiken oben, sondern sucht direkt nach dem bestmöglichen Gesamtplan - liefert bei genug "
+            "Zeit die nachweislich optimale Lösung, ist dafür aber deutlich rechenintensiver. Button-gesteuert "
+            "statt automatisch bei jeder Eingabe, damit die App nicht bei jeder Reglerbewegung neu rechnet."
         )
         time_limit = st.slider("Zeitlimit (s)", 1, MAX_ORTOOLS_TIME_LIMIT, DEFAULT_ORTOOLS_TIME_LIMIT, key="ortools_time_limit")
 
@@ -353,6 +402,19 @@ Verteiler-Zone (schnellere Förderstrecke/Lift). Jede Gasse hat genau einen Umsc
 Hub. Ein zonenübergreifender Auftrag durchläuft damit bis zu drei **Legs**: Gasse → Hub →
 Zielgasse, mit einer festen Umstiegszeit an jedem der beiden Umschlagpunkte.
 
+**Ein Auftrag Schritt für Schritt:** Auftrag 7 soll von einem Lagerplatz in Gasse 2 zu einer
+Position in Gasse 4. *Leg 1:* Gassen-Shuttle fährt in Gasse 2 zum Hub-Anschluss, sagen wir 3
+Minuten. *Umstieg 1:* feste Umstiegszeit, z. B. 1 Minute, für die Übergabe an den
+Hub-Transporter - plus die Zeit, die Auftrag 7 zusätzlich warten muss, falls gerade kein
+Hub-Transporter frei ist (das ist die **Umstiegs-Wartezeit**, die zentrale Kennzahl dieser
+Demo). *Leg 2:* Hub-Transporter fährt quer durch den Verteiler zum Anschluss von Gasse 4, z.
+B. 4 Minuten. *Umstieg 2:* wieder Umstiegszeit plus eventuelle Wartezeit, diesmal auf ein
+freies Gassen-Shuttle in Gasse 4. *Leg 3:* letztes Stück zur Zielposition, z. B. 2 Minuten.
+Reine Fahrzeit also 9 Minuten plus 2 Minuten Umstiegszeit = 11 Minuten bestenfalls - jede
+zusätzliche Minute, die Auftrag 7 an einem der beiden Umschlagpunkte auf einen freien
+Transporter wartet, zählt in die Umstiegs-Wartezeit, die im Vergleich unten je Verfahren
+sichtbar wird.
+
 **Aufträge:** Bekommen Ursprung, Ziel und eine Release-Zeit; ein einstellbarer Anteil ist
 bewusst zonenübergreifend, damit Umstiege im Standardfall tatsächlich auftreten - sonst zeigt
 der Kernvergleich unten keinen Unterschied (siehe Preset "Kleines Lager, wenig Verkehr").
@@ -389,6 +451,12 @@ Zonenbindung, Umschlagpunkten und den vier Dispositionsverfahren bleibt aber das
 with st.expander("📐 Mathematische Formulierung"):
     st.markdown(
         r"""
+**In Worten, vor der Notation:** Gesucht ist für jeden Leg jedes Auftrags ein Startzeitpunkt,
+der die Summe aller Durchlaufzeiten (Ankunft minus Freigabe) minimiert - unter zwei Arten von
+Nebenbedingungen: (1) ein Auftrag darf seinen nächsten Leg erst antreten, wenn der vorige
+fertig ist UND die Umstiegszeit verstrichen ist, und (2) eine Zone kann zu keinem Zeitpunkt
+mehr Legs gleichzeitig bedienen, als sie Transporter hat. Formal:
+
 Gegeben ein Auftrag $o$ mit einer Folge von Legs $\ell \in \{1, \ldots, L_o\}$ (Zone,
 Ein-/Ausstiegsknoten, feste Fahrzeit $d_{o,\ell}$), eine Release-Zeit $r_o$, eine feste
 Umstiegszeit $h$ und je Zone $z$ eine Transporteranzahl $c_z$. Gesucht sind Startzeiten
