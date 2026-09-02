@@ -13,7 +13,7 @@ managed warehouse zone would show in practice.
 from warehouse_dispatch_core import simulate_dispatch
 
 
-def _priority(order, route, leg_index, ready_time, idle_positions):
+def _priority(order, route, leg_index, ready_time, idle_positions, now):
     return route.legs[leg_index].travel_time
 
 

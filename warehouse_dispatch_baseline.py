@@ -8,7 +8,7 @@ route in the sibling VRP demo.
 from warehouse_dispatch_core import simulate_dispatch
 
 
-def _priority(order, route, leg_index, ready_time, idle_positions):
+def _priority(order, route, leg_index, ready_time, idle_positions, now):
     return 0.0
 
 

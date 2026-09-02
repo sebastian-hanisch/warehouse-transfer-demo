@@ -30,16 +30,21 @@ demo's scenarios, but real should the numbers ever look suspiciously close.
 
 Objective: minimize total completion time, weighted so express orders
 (order.is_express) count EXPRESS_WEIGHT times as much - a classic
-weighted-completion-time formulation, the exact objective analogue of
-coordinated's EXPRESS_PRIORITY_FACTOR. Blended in on top (2026-09-02): a
-tardiness penalty, TARDINESS_PENALTY_WEIGHT times each order's
-`max(0, completion - due_time)`, the exact analogue of what coordinated
-subtracts from its priority score for the same reason - same constant,
-same semantics, deliberately shared between the exact solver and the
-heuristic (unlike EXPRESS_PRIORITY_FACTOR/EXPRESS_WEIGHT, two
-independently tuned numbers for the same idea). CP-SAT's objective must be
-integer, so TARDINESS_PENALTY_WEIGHT (a small float) is applied by scaling
-the WHOLE objective by OBJECTIVE_SCALE rather than the weight itself -
+weighted-completion-time formulation. EXPRESS_WEIGHT is the SAME constant
+`warehouse_dispatch_coordinated.py`'s ATCS index uses in its own w/p term
+- genuinely shared, not two independently-tuned numbers for the same idea
+(that used to be true of EXPRESS_PRIORITY_FACTOR/EXPRESS_WEIGHT before the
+ATCS rewrite). Blended in on top: a tardiness penalty,
+TARDINESS_PENALTY_WEIGHT times each order's `max(0, completion -
+due_time)`. This one is NOT shared with coordinated - coordinated's
+gated-tardiness attempt under this same mechanism was proven empirically
+inert (by the time an order is projected late, it's almost always alone
+in its ready queue - see `warehouse_dispatch_coordinated.py`'s docstring),
+so coordinated now expresses due-date pressure as continuous slack inside
+the same ATCS exponential instead, a genuinely different mechanism, not
+just an independently-tuned copy. CP-SAT's objective must be integer, so
+TARDINESS_PENALTY_WEIGHT (a small float) is applied by scaling the WHOLE
+objective by OBJECTIVE_SCALE rather than the weight itself -
 doesn't change the argmin, just keeps every coefficient integral.
 """
 

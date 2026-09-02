@@ -129,10 +129,10 @@ def test_coordinated_reduces_transfer_wait_under_hub_bottleneck():
     """The core hook: with a single-transporter hub bottleneck and many
     cross-zone orders, greedy/decentralized SPT dispatch judges legs only by
     their own travel time and lets short same-aisle legs jump the queue
-    ahead of hub transfers, while the coordinated dispatcher (SPT plus a
-    small weighted look-ahead at the order's remaining journey) prioritizes
-    orders closest to finishing. Coordinated should not create more total
-    transfer waiting than greedy on the same instance."""
+    ahead of hub transfers, while the coordinated dispatcher (an ATCS index
+    factoring in due-date slack and setup/repositioning distance alongside
+    SPT) prioritizes orders under real pressure. Coordinated should not
+    create more total transfer waiting than greedy on the same instance."""
     net, orders, routes, transporters_per_zone = build_scenario(
         n_aisles=3, hub_nodes=1, transporters_per_aisle=2, transporters_hub=1,
         n_orders=30, horizon_minutes=20.0, cross_zone_share=0.8, seed=7,
@@ -152,10 +152,11 @@ def test_coordinated_does_not_lose_on_lead_time_in_aggregate():
     the current leg) reliably cut transfer wait but, swept over hundreds of
     random scenarios, LOST to greedy on Gesamtdurchlaufzeit more often than
     it won - throwing away SPT's per-resource optimality cost more locally
-    than the global view gained. The current priority (current leg + a
-    small weighted look-ahead) was tuned against exactly this aggregate
-    check, not a single instance (too noisy for a single seed to be a
-    reliable signal, learned the hard way in the sibling VRP demo)."""
+    than the global view gained. The current priority is an ATCS
+    (Apparent-Tardiness-Cost-with-Setups) index, swept the same way (4/40
+    losses, total_diff -907 at the default scenario family when last
+    checked) - not a single-instance check, too noisy for one seed to be a
+    reliable signal, learned the hard way in the sibling VRP demo."""
     total_diff = 0.0
     losses = 0
     n_seeds = 40
@@ -178,14 +179,14 @@ def test_coordinated_does_not_lose_on_lead_time_in_aggregate():
 
 def test_coordinated_improves_express_on_time_rate_vs_greedy():
     """Express orders are the one dispatch signal greedy deliberately never
-    looks at (by design - it stays pure local SPT). Coordinated scales an
-    express order's priority score down (EXPRESS_PRIORITY_FACTOR), so it
-    should reliably get better on-time performance for express orders than
-    greedy under contention. Checked across many seeds, not a single
-    instance - an occasional single-seed loss is expected noise once
-    REPOSITIONING_WEIGHT is also part of the priority (35 wins / 1 loss /
-    4 ties over 40 seeds when this was last swept), not a regression to
-    chase to zero; the aggregate direction is what matters."""
+    looks at (by design - it stays pure local SPT). Coordinated weighs an
+    express order's ATCS index up (EXPRESS_WEIGHT in the w/p term, the same
+    constant OR-Tools uses), so it should reliably get better on-time
+    performance for express orders than greedy under contention. Checked
+    across many seeds, not a single instance - an occasional single-seed
+    loss is expected noise (14 wins / 2 losses / 4 ties over 20 seeds when
+    this was last swept), not a regression to chase to zero; the aggregate
+    direction is what matters."""
     wins = losses = 0
     n_seeds = 20
     for seed in range(n_seeds):

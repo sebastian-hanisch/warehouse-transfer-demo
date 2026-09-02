@@ -71,11 +71,15 @@ class _TransporterState:
 
 
 def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_minutes, priority_fn, method_name):
-    """priority_fn(order, route, leg_index, ready_time, idle_positions) -> sortable
-    value, lower = served first. idle_positions is the list of node ids
-    where the leg's own zone's CURRENTLY idle transporters sit (may be
+    """priority_fn(order, route, leg_index, ready_time, idle_positions, now) ->
+    sortable value, lower = served first. idle_positions is the list of node
+    ids where the leg's own zone's CURRENTLY idle transporters sit (may be
     empty transiently between events - only used to react to positioning,
-    never required)."""
+    never required). now is the current decision instant (shared by every
+    candidate compared in the same try_match call, unlike ready_time which
+    differs per candidate) - needed for rules like ATCS that measure slack
+    relative to "right now", not to whenever this particular leg happened
+    to become ready."""
     seq = itertools.count()
     events = []  # heap of (time, seq, kind, payload)
     orders_by_id = {o.order_id: o for o in orders}
@@ -103,6 +107,7 @@ def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_m
                         ready_queue[zone_id][i][1],
                         ready_queue[zone_id][i][2],
                         idle_positions,
+                        now,
                     ),
                     ready_queue[zone_id][i][2],  # tie-break: ready_time
                 ),

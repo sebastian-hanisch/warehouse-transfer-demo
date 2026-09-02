@@ -11,44 +11,49 @@ abgeliefert hat, muss leer zum nächsten Einsatzort fahren (Repositionierung), g
 wie ein echtes Shuttle/AGV.
 
 Vier Dispositionsverfahren im Vergleich: Unoptimiert (FCFS), Dezentral je Zone
-(Greedy: lokales SPT je Leg, blind für Repositionierungskosten), Koordiniert (eigene
-Heuristik: SPT je Leg plus kleine Gewichte auf die restliche Reise des Auftrags, auf
-die Distanz zum nächsten freien Transporter, UND auf den verbleibenden Zeitpuffer bis
-zur Frist) und OR-Tools (CP-SAT mit sequenzabhängigen Rüstzeiten je Transporter).
-HAUPTKRITERIUM für alle vier Verfahren ist die Gesamtdurchlaufzeit (Summe aller
-Auftrags-Durchlaufzeiten) - Umstiegs-Wartezeit und Repositionierung sind keine eigenen
-Ziele, sondern Ursachen, die sich in der Gesamtdurchlaufzeit niederschlagen; sie
-tauchen in der App nur noch als Erklärung auf, WORAUS sich die Gesamtdurchlaufzeit
-zusammensetzt (siehe `build_lead_time_composition_figure`), nicht als eigene
-KPI-Kacheln oder Vergleichscharts. Koordiniert und OR-Tools blenden zusätzlich einen
-kleinen Verspätungs-/Dringlichkeitsterm mit ein (Details unten je Verfahren) -
+(Greedy: lokales SPT je Leg, blind für Repositionierungskosten), Koordiniert (ATCS -
+Apparent Tardiness Cost with Setups, eine literaturbekannte Dispatching-Regel aus der
+Scheduling-Forschung für genau diese Problemstruktur: parallele Maschinen mit
+sequenzabhängigen Rüstzeiten und Fristen) und OR-Tools (CP-SAT mit sequenzabhängigen
+Rüstzeiten je Transporter). HAUPTKRITERIUM für alle vier Verfahren ist die
+Gesamtdurchlaufzeit (Summe aller Auftrags-Durchlaufzeiten) - Umstiegs-Wartezeit und
+Repositionierung sind keine eigenen Ziele, sondern Ursachen, die sich in der
+Gesamtdurchlaufzeit niederschlagen; sie tauchen in der App nur noch als Erklärung auf,
+WORAUS sich die Gesamtdurchlaufzeit zusammensetzt (siehe
+`build_lead_time_composition_figure`), nicht als eigene KPI-Kacheln oder
+Vergleichscharts. Koordiniert und OR-Tools blenden zusätzlich einen kleinen
+Verspätungs-/Dringlichkeitsterm mit ein (Details unten je Verfahren) -
 Gesamtdurchlaufzeit bleibt dominant, Pünktlichkeit ist kein zweites, gleichrangiges
 Ziel, sondern ein mitgewichteter Nebenaspekt derselben Zielfunktion. Kernthema: lokal
 optimale Disposition je Zone erzeugt an Umschlagpunkten Wartezeit, die sich
 kaskadenartig fortpflanzt und die Gesamtdurchlaufzeit verschlechtert - eine
-zonenübergreifend koordinierte Disposition vermeidet das systematisch. Reines
-"kürzeste Restroute zuerst" ohne Repositionierungs-Gewicht wurde zuerst probiert,
-verlor aber im Sweep über hunderte Zufallsszenarien öfter als es gegen Greedy bei der
-Gesamtdurchlaufzeit gewann, sobald Repositionierung Teil des Modells wurde - Greedy
-blieb trotz seiner Kurzsichtigkeit lokal stark genug, dass ihn zu ignorieren mehr
-kostete, als die globale Sicht einbrachte. Erst das zusätzliche Gewicht auf die
-Distanz zum nächsten freien Transporter (dieselbe sequenzabhängige Rüstzeit-Logik, die
-OR-Tools exakt löst) macht Koordiniert wieder zuverlässig besser als Greedy bei der
-Gesamtdurchlaufzeit, über mehrere Szenario-Familien geprüft.
+zonenübergreifend koordinierte Disposition vermeidet das systematisch.
+
+Koordiniert hat drei Anläufe gebraucht, dokumentiert in
+`warehouse_dispatch_coordinated.py`, weil jede plausibel klingende Formel erst
+geschweept werden musste, bevor sie sich als tatsächlich richtig herausstellte: reines
+"kürzeste Restroute zuerst" verlor gegen Greedy, sobald Repositionierung Teil des
+Modells wurde; eine handgestrickte lineare Kombination aus drei unabhängig
+geschweepten Gewichten (SPT, Restroute, Repositionierungsdistanz, später auch
+Zeitpuffer) funktionierte danach leidlich, wirkte aber nie wie etwas, das man absichtlich
+so gebaut hätte. Seit 2026-09-02 ersetzt durch ATCS - dieselben drei Signale (SPT,
+Zeitpuffer, Rüstzeit/Repositionierung), aber als eine publizierte Formel mit
+exponentieller Abklingfunktion statt drei linearer Gewichte, geschweept über dieselben
+Szenario-Familien: schlägt die alte Version bei der Gesamtverspätung in JEDER
+getesteten Szenario-Familie, nicht nur manchen.
 
 Ein Anteil der Aufträge kann als Express markiert werden (engere Frist). Nur Koordiniert
-(Prioritäts-Faktor 0,5 PLUS ein Dringlichkeits-Term basierend auf dem verbleibenden
-Zeitpuffer) und OR-Tools (Gewicht 3 im Zielwert PLUS echter Verspätungs-Strafterm)
-nutzen Frist bzw. Markierung aktiv - Unoptimiert und Greedy ignorieren beides bewusst,
-um zu zeigen, dass ein rein lokales/unkoordiniertes System gesetzte Prioritäten in der
-Praxis oft schlicht nicht respektiert. Der Dringlichkeits-Term bei Koordiniert wurde
-bewusst NICHT als reine "Strafe für bereits eingetretene Verspätung" gebaut (eine
-erste, zu OR-Tools symmetrische Fassung erwies sich als wirkungslos - ein Auftrag ist
-zu dem Zeitpunkt, an dem er nachweislich zu spät dran ist, in der Warteschlange fast
-immer schon allein, also gibt es nichts mehr umzusortieren), sondern als
-kontinuierliches, ungegatetes Signal auf den Zeitpuffer selbst - wirkt schon, bevor ein
-Auftrag tatsächlich zu spät ist, gedeckelt (`SLACK_CAP_MINUTES`), damit komfortabel
-gepufferte Aufträge nicht unbegrenzt zurückgestuft werden.
+(EXPRESS_WEIGHT als Gewicht im ATCS-Index) und OR-Tools (dasselbe EXPRESS_WEIGHT im
+Zielwert PLUS echter Verspätungs-Strafterm) nutzen Frist bzw. Markierung aktiv -
+Unoptimiert und Greedy ignorieren beides bewusst, um zu zeigen, dass ein rein
+lokales/unkoordiniertes System gesetzte Prioritäten in der Praxis oft schlicht nicht
+respektiert. Koordinierts Dringlichkeits-Term wurde bewusst NICHT als reine "Strafe
+für bereits eingetretene Verspätung" gebaut (eine erste, zu OR-Tools symmetrische
+Fassung erwies sich als wirkungslos - ein Auftrag ist zu dem Zeitpunkt, an dem er
+nachweislich zu spät dran ist, in der Warteschlange fast immer schon allein, also gibt
+es nichts mehr umzusortieren), sondern als kontinuierliches Signal auf den
+verbleibenden Zeitpuffer, das über eine Abklingfunktion (ATCS_K1) schon vor
+tatsächlicher Verspätung wirkt.
 
 Selbe Struktur wie bei den anderen Demos in diesem Workspace: Ergebnis zuerst,
 vollständiger Methodenvergleich sekundär im Expander, dazu "Wie funktioniert diese
@@ -316,16 +321,17 @@ Reihenfolge ein frei werdender Transporter unter mehreren wartenden Aufträgen w
 Processing Time, SPT) - blind dafür, wie viel Reise ein Auftrag insgesamt noch vor sich hat.
 
 **Ein Beispiel macht sichtbar, wo das schiefgeht:** Auftrag A ist schon einmal umgestiegen
-und wartet am Hub nur noch auf seinen letzten, kurzen Leg zur Zielgasse. Zur selben Zeit wird
-Auftrag B frisch freigegeben - sein allererster Leg ist rein zufällig eine Idee kürzer als A's
-letzter Leg. Greedy sieht in der Hub-Zone nur die beiden Legs vor sich und ihre Dauer, nicht
-die Vorgeschichte der Aufträge - also gewinnt B, obwohl A eigentlich fast fertig ist. A wartet
-länger, genau die Wartezeit, die vorher schon einmal an Umstieg 1 entstanden ist, addiert sich
-so zu Umstieg 2. **Koordiniert** wägt zusätzlich leicht ab, wie viel Reise nach diesem Leg noch
-übrig bleibt (10 % Gewicht neben der SPT-Fahrzeit) - genug, damit A den knappen Vorsprung
-zurückbekommt, ohne dass Koordiniert deshalb insgesamt schlechter disponiert als Greedy: SPT
-bleibt das Hauptkriterium, weil es für die Gesamtdurchlaufzeit einer einzelnen Ressource
-nachweislich das Beste ist.
+und wartet am Hub nur noch auf seinen letzten, kurzen Leg zur Zielgasse - beim ersten Umstieg
+ist bereits Zeit von seinem Frist-Puffer draufgegangen. Zur selben Zeit wird Auftrag B frisch
+freigegeben - sein allererster Leg ist rein zufällig eine Idee kürzer als A's letzter Leg, und
+B hat noch seinen vollen Puffer. Greedy sieht in der Hub-Zone nur die beiden Legs vor sich und
+ihre Dauer, nicht die Vorgeschichte der Aufträge - also gewinnt B, obwohl A eigentlich fast
+fertig ist und ihn diese Verspätung härter trifft. **Koordiniert** dämpft die Priorität eines
+Legs mit einer Exponentialfunktion über den verbleibenden Zeitpuffer bis zur Frist (Teil der
+ATCS-Regel, Details im Math-Expander) - A's bereits angeknabberter Puffer macht seinen Leg
+dringlicher, genug, um den knappen Vorsprung zurückzubekommen, ohne dass Koordiniert deshalb
+insgesamt schlechter disponiert als Greedy: SPT bleibt der dominante Faktor, weil es für die
+Gesamtdurchlaufzeit einer einzelnen Ressource nachweislich das Beste ist.
 
 **Ein zweites Beispiel zeigt, warum Greedy auch bei der reinen Gesamtdurchlaufzeit
 zurückfällt:** Zwei Legs werden gleichzeitig frei, einer davon am anderen Ende der Gasse als
@@ -333,10 +339,10 @@ der aktuell freie Shuttle steht, der andere direkt daneben - beide nominell fast
 Greedy sieht nur die Fahrzeit des Legs selbst und ist bei einem Unentschieden indifferent; oft
 genug schickt es den Shuttle auf die weite Leerfahrt. Diese Leerfahrt (Repositionierung) zählt
 für die Auslieferung nicht mit, kostet aber echte Zeit - Greedy "sieht" sie beim Entscheiden gar
-nicht. Koordiniert bezieht die Distanz zum nächsten freien Transporter mit einem zweiten
-kleinen Gewicht (150 % der SPT-Fahrzeit) in die Priorität ein und bevorzugt bei ähnlich
-dringenden Legs konsequent den näherliegenden - sichtbar an den hellen, schraffierten Balken im
-Gantt-Chart unten (Leerfahrten), die bei Koordiniert spürbar kürzer ausfallen als bei Greedy.
+nicht. Koordiniert dämpft die Priorität eines Legs mit einer zweiten Exponentialfunktion über
+die Distanz zum nächsten freien Transporter und bevorzugt bei ähnlich dringenden Legs
+konsequent den näherliegenden - sichtbar an den hellen, schraffierten Balken im Gantt-Chart
+unten (Leerfahrten), die bei Koordiniert spürbar kürzer ausfallen als bei Greedy.
 
 **Beide Effekte zahlen auf dieselbe Zielgröße ein:** die Gesamtdurchlaufzeit je
 Auftrag. Das folgende Diagramm zeigt sie Auftrag für Auftrag im direkten Vergleich.
@@ -553,25 +559,21 @@ Signal nutzt. Koordiniert und OR-Tools tun das dagegen aktiv (Details unten je V
   Auftrag über die eigene Zone hinaus noch vor sich hat UND blind dafür, wo die eigenen
   Transporter gerade stehen - es kann einen Shuttle quer durchs Lager schicken, wenn dessen
   Leg nominell am kürzesten ist, egal wie weit die Leerfahrt dorthin wäre.
-- **Koordiniert:** eine eigene Heuristik, die SPT als dominantes Kriterium beibehält, die
-  Priorität aber zusätzlich mit drei kleinen Gewichten versieht: 10 % auf die restliche
-  Reise des Auftrags über alle Zonen hinweg, 150 % auf die Entfernung zum nächsten
-  freien Transporter, und 15 % auf den verbleibenden Zeitpuffer bis zur Frist (gedeckelt
-  bei 5 Minuten, damit komfortabel gepufferte Aufträge nicht unbegrenzt zurückgestuft
-  werden). Eine erste Fassung ganz ohne Positionsbewusstsein (nur SPT + Restroute)
-  verlor im Test über hunderte Zufallsszenarien öfter als sie gegen Greedy bei der
-  Gesamtdurchlaufzeit gewann, sobald Transporter überhaupt repositionieren mussten - Greedys
-  lokale SPT-Stärke reichte trotz ihrer Kurzsichtigkeit oft aus, das komplett zu ignorieren
-  kostete mehr, als die Restroute-Sicht einbrachte. Erst das zusätzliche Positions-Gewicht
-  macht Koordiniert wieder zuverlässig besser als Greedy, bei beiden Kennzahlen, über
-  mehrere Szenario-Familien geprüft. Express-Aufträge bekommen zusätzlich einen
-  Prioritäts-Bonus (die gesamte Priorität wird mit 0,5 multipliziert, niedriger = früher
-  dran) - dieselbe Logik, nur konsequent nach vorn gezogen. Der Zeitpuffer-Term wirkt
-  unabhängig davon: je knapper die Frist relativ zur optimistisch geschätzten
-  Restlaufzeit, desto weiter vorne - ehrlich gesagt mit begrenztem Effekt in den
-  Stoßzeit-Szenarien dieser Demo (die Gesamtdurchlaufzeit-Terme dominieren dort meist
-  schon), aber messbar in ruhigeren Szenarien, ohne Gesamtdurchlaufzeit oder
-  Express-Pünktlichkeit spürbar zu verschlechtern.
+- **Koordiniert:** kein Formel-Sammelsurium mehr, sondern eine literaturbekannte
+  Dispatching-Regel - **ATCS (Apparent Tardiness Cost with Setups)**, entwickelt für
+  genau diese Problemklasse (parallele Maschinen, sequenzabhängige Rüstzeiten,
+  Fristen). Der Index kombiniert drei Signale multiplikativ statt additiv: SPT
+  (Gewicht/Fahrzeit), eine Exponentialfunktion, die mit schrumpfendem Zeitpuffer
+  wächst, und eine zweite Exponentialfunktion, die mit wachsender Repositionierdistanz
+  zum nächsten freien Transporter schrumpft. Zwei frühere Fassungen wurden verworfen:
+  reines "kürzeste Restroute zuerst" verlor gegen Greedy, sobald Repositionierung Teil
+  des Modells wurde; die danach gebaute Linearkombination aus drei unabhängig
+  geschweepten Gewichten (Restroute, Repositionierdistanz, Zeitpuffer) funktionierte,
+  wirkte aber nie wie ein Verfahren, das man absichtlich genau so entworfen hätte. ATCS
+  schlägt diese Linearkombination bei der Gesamtverspätung in **jeder** getesteten
+  Szenario-Familie, nicht nur manchen - ein durchgängiger, nicht nur gelegentlicher
+  Gewinn. Express-Aufträge bekommen ein höheres Gewicht im SPT-Term (EXPRESS_WEIGHT,
+  dieselbe Konstante wie bei OR-Tools unten) statt eines eigenen Faktors.
 - **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer. Weil Repositionierung
   davon abhängt, WELCHER Transporter einen Leg übernimmt, sind Transporter hier keine
   anonyme Kapazität mehr wie zuvor ohne Repositionierung: jeder Leg bekommt eine
@@ -580,8 +582,8 @@ Signal nutzt. Koordiniert und OR-Tools tun das dagegen aktiv (Details unten je V
   Repositionierungszeit dazwischen - ein Standardmuster für "parallele Maschinen mit
   sequenzabhängigen Rüstzeiten". Ziel: minimale **gewichtete** Gesamtdurchlaufzeit -
   Express-Aufträge zählen 3-fach im Zielwert (klassische Weighted-Completion-Time-
-  Formulierung), das genaue Analogon zu Koordiniert's Prioritäts-Bonus, nur als echtes
-  Optimierungsziel statt als Heuristik-Regel. Zusätzlich fließt eine echte
+  Formulierung, dasselbe EXPRESS_WEIGHT wie in Koordiniert's ATCS-Index), nur als
+  echtes Optimierungsziel statt als Heuristik-Regel. Zusätzlich fließt eine echte
   Verspätungsstrafe ein: pro Auftrag eine Variable für `max(0, Fertigstellung - Frist)`,
   mit eigenem Gewicht zur gewichteten Gesamtdurchlaufzeit addiert - anders als bei
   Koordiniert funktioniert dieses gegatete "nur bei tatsächlicher Verspätung"-Muster
@@ -671,31 +673,39 @@ Legs bei Greedy, und bei Koordiniert
 """
     )
     st.latex(
-        r"\text{Priorität}(o,\ell) = p_o \cdot \Big( d_{o,\ell} + 0{,}1 \cdot \sum_{k > \ell} \big(d_{o,k} + h\big)"
-        r" + 1{,}5 \cdot \min_{\text{frei } t} \rho(t, e_{o,\ell}) \Big) + 0{,}15 \cdot \min\big(\sigma_{o,\ell},\, 5\big),"
-        r" \qquad p_o = 0{,}5 \text{ falls } o \text{ Express, sonst } 1"
+        r"I(o,\ell) = \frac{w_o}{d_{o,\ell}} \cdot "
+        r"\exp\!\left(-\frac{\max(\sigma_{o,\ell},\,0)}{K_1 \, \bar d}\right) \cdot "
+        r"\exp\!\left(-\frac{\min_{\text{frei } t} \rho(t, e_{o,\ell})}{K_2 \, \bar d}\right),"
+        r" \qquad w_o = 3 \text{ falls } o \text{ Express, sonst } 1"
     )
     st.markdown(
         r"""
-Dieselbe kürzeste-Fahrzeit-Logik wie Greedy ($d_{o,\ell}$), plus ein kleines Gewicht (10 %)
-auf die gesamte noch verbleibende Reise nach dem aktuellen Leg, plus ein zweites Gewicht
-(150 %) auf die Fahrzeit zum NÄCHSTEN gerade freien Transporter $t$ - beides zusammen mit
-$p_o$ skaliert, niedrigerer Wert wird zuerst bedient. Eine erste Fassung ohne den
-Repositionierungs-Term verlor im Test über hunderte Zufallsszenarien öfter als sie gegen
-Greedy bei der Gesamtdurchlaufzeit gewann, sobald Transporter überhaupt repositionieren
-mussten - dieselbe Simulationslogik, aber drei verschiedene Dispatchregeln, deren einziger
-Unterschied diese eine Formel ist (FCFS: Priorität konstant 0; Greedy: $p_o \equiv 1$, kein
-Restroute-, Repositionierungs- oder Zeitpuffer-Term).
+Bedient wird die Warteschlange nach dem HÖCHSTEN $I(o,\ell)$ (umgekehrte Konvention zu den
+anderen Prioritätswerten hier - im Code als $-I$ zurückgegeben, damit "niedriger zuerst"
+weiter für alle drei Verfahren gilt). Das ist die **Apparent-Tardiness-Cost-with-Setups
+(ATCS)**-Regel aus der Scheduling-Literatur, keine selbst erfundene Formel: $w_o/d_{o,\ell}$
+ist gewichtetes SPT (dieselbe Logik wie Greedy, nur mit Express-Gewicht), die erste
+Exponentialfunktion dämpft mit wachsendem Zeitpuffer $\sigma_{o,\ell}$, die zweite mit
+wachsender Repositionierdistanz zum nächsten freien Transporter $t$. $\bar d$ ist die
+durchschnittliche Leg-Fahrzeit über das gesamte Szenario (einmal berechnet, nicht pro
+Entscheidung) - derselbe Skalierungsfaktor für beide Exponentialfunktionen, weil
+Repositionierdistanzen und Leg-Fahrzeiten dieselbe Art Größe sind (beides
+Knoten-zu-Knoten-Fahrzeiten innerhalb einer Zone). $K_1, K_2$ sind Abkling-Parameter,
+empirisch geschweept (aktuell $K_1{=}1{,}0$, $K_2{=}0{,}15$) - kleines $K_2$ heißt, die
+Rüstzeit-Dämpfung greift schon bei kurzen Distanzen hart durch; ein zu großes $K_2$ verlor
+im Sweep gegen Greedy in bis zu 33 von 40 Szenarien.
 
-Der letzte Term ist der Zeitpuffer bis zur Frist, $\sigma_{o,\ell} = \delta_o - (r_{o,\ell} +
-d_{o,\ell} + \sum_{k>\ell} (d_{o,k}+h))$ (Frist minus optimistisch geschätzte
-Fertigstellung), gedeckelt bei 5 Minuten, damit komfortabel gepufferte Aufträge nicht
-unbegrenzt zurückgestuft werden - je kleiner (oder negativer) der Puffer, desto niedriger
-die Priorität, desto eher dran. Bewusst KEIN `max(0, ...)`-Gate wie bei OR-Tools' Term oben:
-eine erste, dazu symmetrische Fassung war fast wirkungslos, weil ein Auftrag zu dem
-Zeitpunkt, an dem er nachweislich bereits verspätet ist, in seiner Warteschlange fast immer
-schon allein steht - es gibt dann nichts mehr umzusortieren. Die ungegatete, kontinuierliche
-Fassung wirkt schon vorher, auf Kosten eines wirklich einfachen Vorher-Nachher-Vergleichs.
+$\sigma_{o,\ell} = \delta_o - (t + d_{o,\ell} + \sum_{k>\ell}(d_{o,k}+h))$ ist der
+Zeitpuffer bis zur Frist $\delta_o$ ab dem aktuellen Entscheidungszeitpunkt $t$ (nicht ab
+$r_{o,\ell}$, da mehrere zeitgleich wartende Legs denselben Referenzzeitpunkt brauchen, um
+fair vergleichbar zu sein). FCFS: Priorität konstant 0; Greedy: kürzeste Fahrzeit des
+aktuellen Legs, kein Express-, Zeitpuffer- oder Repositionierungs-Term.
+
+Zwei frühere Fassungen wurden verworfen, bevor diese stand: reines "kürzeste Restroute
+zuerst" verlor gegen Greedy, sobald Repositionierung Teil des Modells wurde; die danach
+gebaute Linearkombination aus drei unabhängig geschweepten additiven Gewichten
+funktionierte, aber nicht durchgängig - bei der Gesamtverspätung schlägt die jetzige
+ATCS-Fassung sie in JEDER getesteten Szenario-Familie, nicht nur einigen.
 """
     )
 

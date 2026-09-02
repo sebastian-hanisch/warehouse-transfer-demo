@@ -69,15 +69,14 @@ DEFAULT_EXPRESS_SHARE = 0.2
 MIN_EXPRESS_SHARE = 0.0
 MAX_EXPRESS_SHARE = 1.0
 
-# Coordinated: multiplies an express order's priority score down (lower score
-# = served first in this codebase's convention), so it consistently jumps
-# ahead of similar-priority non-express legs without discarding the
-# underlying SPT + remaining-work logic.
-EXPRESS_PRIORITY_FACTOR = 0.5
-
-# OR-Tools: weight on an express order's completion time in the objective
-# (weighted sum of completion times, a classic scheduling formulation) -
-# higher weight makes finishing it early matter proportionally more.
+# Weight on an express order's completion time - genuinely SHARED between
+# OR-Tools' objective (weighted sum of completion times) and Koordiniert's
+# ATCS priority index (as the w in its w/p term) - higher weight makes
+# finishing an express order early matter proportionally more, the same
+# way in both. Used to be two independently-tuned numbers
+# (EXPRESS_PRIORITY_FACTOR for coordinated, this one for OR-Tools) until
+# coordinated was rebuilt around ATCS, which naturally takes a weight
+# instead of a discount factor.
 EXPRESS_WEIGHT = 3
 
 # OR-Tools ONLY: cost of one minute of lateness (completion_time beyond
@@ -87,10 +86,10 @@ EXPRESS_WEIGHT = 3
 # Originally meant to be the SAME constant/mechanism for coordinated too,
 # but that gated ("already late") version turned out empirically inert
 # there (see warehouse_dispatch_coordinated.py's module docstring for why)
-# - coordinated now uses its own continuous, ungated SLACK_WEIGHT instead,
-# a genuinely different mechanism, not just an independently-tuned copy of
-# this one. Baseline and greedy do not use this - they stay blind to due
-# dates entirely, same as they already are to is_express, by design.
+# - coordinated now expresses due-date pressure as continuous slack inside
+# its ATCS index instead, a genuinely different mechanism. Baseline and
+# greedy do not use this - they stay blind to due dates entirely, same as
+# they already are to is_express, by design.
 TARDINESS_PENALTY_WEIGHT = 0.5
 
 # OR-Tools

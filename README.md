@@ -32,23 +32,21 @@ derselben Kennzahlen-Berechnung ausgewertet:
   (Shortest Processing Time, SPT) – ein textbuchmäßig lokal-optimales Verfahren, das aber
   blind dafür ist, ob ein Auftrag noch einen Umstieg vor sich hat, UND blind dafür, wo die
   eigenen Transporter gerade stehen.
-- **Koordiniert (eigene Heuristik):** übernimmt SPT als dominantes Kriterium wie Greedy,
-  gewichtet die Priorität aber zusätzlich leicht mit (a) der restlichen Reise eines
-  Auftrags über alle Zonen hinweg (10 %), (b) der Entfernung zum nächsten freien
-  Transporter (150 %) und (c) dem verbleibenden Zeitpuffer bis zur Frist (15 %, gedeckelt
-  bei 5 Minuten). Eine Fassung ohne (b) verlor im Test über hunderte Zufallsszenarien
-  öfter gegen Greedy bei der Gesamtdurchlaufzeit als sie gewann, sobald Transporter
-  überhaupt repositionieren mussten – Greedys lokale SPT-Stärke reichte trotz ihrer
-  Kurzsichtigkeit oft aus, Positionierung ganz zu ignorieren kostete mehr, als die
-  Restroute-Sicht einbrachte. Erst das Positions-Gewicht macht Koordiniert wieder
-  zuverlässig besser als Greedy, bei beiden Kennzahlen, über mehrere Szenario-Familien
-  geprüft. Term (c) wurde zunächst als gegatete Verspätungsstrafe gebaut (nur aktiv,
-  wenn ein Auftrag bereits verspätet ist) – instrumentiert und geschweept stellte sich
-  das als praktisch wirkungslos heraus: zu dem Zeitpunkt, an dem ein Auftrag nachweislich
-  zu spät dran ist, ist er in seiner Warteschlange fast immer schon allein, es gibt
-  nichts mehr umzusortieren. Die jetzige, ungegatete, kontinuierliche Fassung wirkt schon
-  vorher – mit ehrlich begrenztem Effekt in den Stoßzeit-Szenarien dieser Demo, aber ohne
-  Gesamtdurchlaufzeit oder Express-Pünktlichkeit spürbar zu verschlechtern.
+- **Koordiniert (ATCS):** keine handgestrickte Formel, sondern **Apparent Tardiness Cost
+  with Setups** – eine literaturbekannte Dispatching-Regel (Vepsalainen & Morton 1987,
+  Setup-Erweiterung u. a. Lee/Bhaskaran/Pinedo 1997) für genau diese Problemklasse:
+  parallele Maschinen mit sequenzabhängigen Rüstzeiten und Fristen. Der Index
+  `I = (w/p) · exp(-Zeitpuffer / (K₁·p̄)) · exp(-Repositionierdistanz / (K₂·p̄))`
+  kombiniert gewichtetes SPT mit zwei Exponentialfunktionen (Dringlichkeit,
+  Rüstzeit/Repositionierung) statt drei unabhängig geschweepten additiven Gewichten.
+  Zwei frühere Fassungen wurden verworfen: reines "kürzeste Restroute zuerst" verlor
+  gegen Greedy, sobald Repositionierung Teil des Modells wurde; die danach gebaute
+  Linearkombination (SPT + Restroute-Gewicht + Repositionierungs-Gewicht + später
+  Zeitpuffer-Gewicht, alle unabhängig geschweept) funktionierte, aber nicht durchgängig.
+  ATCS schlägt diese Linearkombination bei der Gesamtverspätung in **jeder** getesteten
+  Szenario-Familie, nicht nur einigen – $K_1{=}1{,}0$, $K_2{=}0{,}15$, ebenfalls geschweept
+  (schwache Rüstzeit-Dämpfung, also großes $K_2$, verlor gegen Greedy in bis zu 33 von 40
+  Szenarien).
 - **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer. Da die
   Repositionierungszeit davon abhängt, WELCHER Transporter einen Leg übernimmt, bekommt
   jeder Leg eine Maschinen-Variable (welcher der $c_z$ Transporter der Zone), und für
@@ -63,11 +61,12 @@ derselben Kennzahlen-Berechnung ausgewertet:
   Zeitlimit und Cooldown (analog zu den Schwesterdemos).
 
 Zusätzlich kann ein Anteil der Aufträge als **Express** markiert werden (engere Frist).
-Nur Koordiniert (Prioritäts-Faktor 0,5 plus der Dringlichkeits-Term oben) und OR-Tools
-(Gewicht 3× im Zielwert, klassische Weighted-Completion-Time-Formulierung, plus die
-Verspätungsstrafe) nutzen Frist bzw. Markierung aktiv – Unoptimiert und Greedy ignorieren
-beides bewusst, um zu zeigen, dass ein rein lokales/unkoordiniertes System gesetzte
-Prioritäten in der Praxis oft schlicht nicht respektiert.
+Nur Koordiniert (EXPRESS_WEIGHT als Gewicht $w$ im ATCS-Index) und OR-Tools (dasselbe
+EXPRESS_WEIGHT im Zielwert, klassische Weighted-Completion-Time-Formulierung, plus die
+Verspätungsstrafe) nutzen Frist bzw. Markierung aktiv – dieselbe Konstante für beide,
+nicht mehr zwei unabhängig gewählte Zahlen für dieselbe Idee. Unoptimiert und Greedy
+ignorieren beides bewusst, um zu zeigen, dass ein rein lokales/unkoordiniertes System
+gesetzte Prioritäten in der Praxis oft schlicht nicht respektiert.
 
 ## Methodik
 
@@ -105,7 +104,7 @@ Prioritäten in der Praxis oft schlicht nicht respektiert.
 | `warehouse_demand.py` | Auftragsgenerierung |
 | `warehouse_routing.py` | Zonen-Pfad je Auftrag (Legs) |
 | `warehouse_dispatch_core.py` | Gemeinsamer Discrete-Event-Simulator für die drei eigenen Verfahren, inkl. Transporter-Positionstracking und Repositionierung |
-| `warehouse_dispatch_baseline.py` / `_greedy.py` / `_coordinated.py` | Die drei Prioritätsregeln (FCFS / lokales SPT / SPT + Restroute-, Positions- und Zeitpuffer-Gewicht) |
+| `warehouse_dispatch_baseline.py` / `_greedy.py` / `_coordinated.py` | Die drei Prioritätsregeln (FCFS / lokales SPT / ATCS-Index) |
 | `warehouse_ortools_solver.py` | CP-SAT-Modell (Maschinen-Zuordnung, sequenzabhängige Repositionierungszeiten, Verspätungsstrafe) |
 | `warehouse_evaluation.py` | Gemeinsame KPI-Berechnung inkl. Fristberechnung (`due_time_for_order`) |
 | `warehouse_visualization.py` | Lagerschema, Gantt-Chart, Animation, KPI-Vergleich |
