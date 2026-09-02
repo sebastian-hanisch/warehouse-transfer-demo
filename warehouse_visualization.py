@@ -123,18 +123,20 @@ def build_gantt_figure(schedule, network, transporters_per_zone):
     return fig
 
 
-def build_transfer_wait_figure(evaluations):
-    """evaluations: dict method -> EvaluationResult, for the comparison view."""
+def build_lead_time_figure(evaluations):
+    """Per-order Gesamtdurchlaufzeit across methods - the "hook" chart. The
+    single metric every method is actually judged and optimized on, shown
+    order by order so a viewer can see where the differences come from."""
     fig = go.Figure()
     for method, result in evaluations.items():
         order_ids = [o.order_id for o in result.orders]
-        waits = [o.transfer_wait for o in result.orders]
-        fig.add_trace(go.Bar(x=order_ids, y=waits, name=method))
+        lead_times = [o.lead_time for o in result.orders]
+        fig.add_trace(go.Bar(x=order_ids, y=lead_times, name=method))
 
     fig.update_layout(
         barmode="group",
         xaxis_title="Auftrag",
-        yaxis_title="Umstiegs-Wartezeit (min)",
+        yaxis_title="Gesamtdurchlaufzeit (min)",
         margin=dict(l=10, r=10, t=30, b=10), height=360,
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
@@ -142,15 +144,45 @@ def build_transfer_wait_figure(evaluations):
 
 
 def build_kpi_comparison_figure(evaluations):
+    """Single-metric method comparison - deliberately just Gesamtdurchlaufzeit,
+    the only thing any method here is actually optimized on."""
     methods = list(evaluations.keys())
     lead = [evaluations[m].avg_lead_time for m in methods]
-    wait = [evaluations[m].avg_transfer_wait for m in methods]
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=methods, y=lead, name="Durchschn. Durchlaufzeit (min)"))
-    fig.add_trace(go.Bar(x=methods, y=wait, name="Durchschn. Umstiegs-Wartezeit (min)"))
+    fig.add_trace(go.Bar(x=methods, y=lead, name="Durchschn. Gesamtdurchlaufzeit (min)", marker_color="#2563eb"))
     fig.update_layout(
-        barmode="group", margin=dict(l=10, r=10, t=30, b=10), height=360,
+        margin=dict(l=10, r=10, t=30, b=10), height=320,
+        yaxis_title="Durchschn. Gesamtdurchlaufzeit (min)",
+        showlegend=False,
+    )
+    return fig
+
+
+def build_lead_time_composition_figure(evaluations, handover_minutes):
+    """Stacked bar: what the average Gesamtdurchlaufzeit is MADE OF per
+    method - pure travel time (non-negotiable), fixed handover overhead,
+    and everything else (waiting for a transporter, repositioning). This is
+    the only place Umstiegs-Wartezeit shows up as a number - as an
+    explanation of composition, not as a metric any method is scored on."""
+    methods = list(evaluations.keys())
+    travel = []
+    handover = []
+    wait = []
+    for m in methods:
+        comp = evaluations[m].avg_lead_time_composition(handover_minutes)
+        travel.append(comp["travel"])
+        handover.append(comp["handover"])
+        wait.append(comp["wait"])
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=methods, y=travel, name="Reine Fahrzeit", marker_color="#2563eb"))
+    fig.add_trace(go.Bar(x=methods, y=handover, name="Umstiegszeit (fest)", marker_color="#059669"))
+    fig.add_trace(go.Bar(x=methods, y=wait, name="Warten (Umstiege + Repositionierung)", marker_color="#dc2626"))
+    fig.update_layout(
+        barmode="stack",
+        yaxis_title="Ø Gesamtdurchlaufzeit (min)",
+        margin=dict(l=10, r=10, t=30, b=10), height=360,
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
     return fig

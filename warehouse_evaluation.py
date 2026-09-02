@@ -13,7 +13,8 @@ class OrderResult:
     release_time: float
     completion_time: float
     lead_time: float
-    transfer_wait: float
+    pure_travel_time: float  # sum of leg travel times, from the route - the non-negotiable minimum
+    transfer_wait: float  # part of lead_time spent waiting AT a handover (leg_index > 0 only)
     n_transfers: int
     due_time: float
     on_time: bool
@@ -56,6 +57,22 @@ class EvaluationResult:
             return 1.0
         return sum(1 for o in express_orders if o.on_time) / len(express_orders)
 
+    def avg_lead_time_composition(self, handover_minutes):
+        """Breaks the average Gesamtdurchlaufzeit down into three parts that
+        sum EXACTLY to avg_lead_time: pure travel time (the non-negotiable
+        minimum), fixed handover overhead (n_transfers * handover_minutes),
+        and everything else (queueing for a transporter, repositioning,
+        including before the very first leg) - Gesamtdurchlaufzeit is the
+        only thing any method here actually optimizes for; this is purely
+        an explanatory breakdown of what it's made of, not a second
+        objective."""
+        if not self.orders:
+            return {"travel": 0.0, "handover": 0.0, "wait": 0.0}
+        avg_travel = sum(o.pure_travel_time for o in self.orders) / len(self.orders)
+        avg_handover = sum(o.n_transfers * handover_minutes for o in self.orders) / len(self.orders)
+        avg_wait = self.avg_lead_time - avg_travel - avg_handover
+        return {"travel": avg_travel, "handover": avg_handover, "wait": max(avg_wait, 0.0)}
+
 
 def minimal_route_time(route, handover_minutes):
     travel = sum(leg.travel_time for leg in route.legs)
@@ -77,6 +94,7 @@ def evaluate_schedule(schedule, routes, orders, transporters_per_zone, handover_
         route = routes[order_id]
         completion_time = legs[-1].end
         lead_time = completion_time - order.release_time
+        pure_travel_time = sum(leg.travel_time for leg in route.legs)
         transfer_wait = sum(max(a.start - a.ready_time, 0.0) for a in legs if a.leg_index > 0)
         due_date_factor = DUE_DATE_FACTOR_EXPRESS if order.is_express else DUE_DATE_FACTOR
         due_time = order.release_time + due_date_factor * minimal_route_time(route, handover_minutes) + DUE_DATE_BUFFER_MINUTES
@@ -86,6 +104,7 @@ def evaluate_schedule(schedule, routes, orders, transporters_per_zone, handover_
                 release_time=order.release_time,
                 completion_time=completion_time,
                 lead_time=lead_time,
+                pure_travel_time=pure_travel_time,
                 transfer_wait=transfer_wait,
                 n_transfers=route.n_transfers,
                 due_time=due_time,

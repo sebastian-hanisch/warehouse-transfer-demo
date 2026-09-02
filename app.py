@@ -14,17 +14,24 @@ Vier Dispositionsverfahren im Vergleich: Unoptimiert (FCFS), Dezentral je Zone
 (Greedy: lokales SPT je Leg, blind für Repositionierungskosten), Koordiniert (eigene
 Heuristik: SPT je Leg plus kleine Gewichte auf die restliche Reise des Auftrags UND
 auf die Distanz zum nächsten freien Transporter) und OR-Tools (CP-SAT mit
-sequenzabhängigen Rüstzeiten je Transporter). Kernthema: lokal optimale Disposition
-je Zone erzeugt an Umschlagpunkten Wartezeit, die sich kaskadenartig fortpflanzt -
-eine zonenübergreifend koordinierte Disposition vermeidet das systematisch. Reines
-"kürzeste Restroute zuerst" ohne Repositionierungs-Gewicht wurde zuerst probiert,
-verlor aber im Sweep über hunderte Zufallsszenarien öfter als es gegen Greedy bei der
-Gesamtdurchlaufzeit gewann, sobald Repositionierung Teil des Modells wurde - Greedy
-blieb trotz seiner Kurzsichtigkeit lokal stark genug, dass ihn zu ignorieren mehr
-kostete, als die globale Sicht einbrachte. Erst das zusätzliche Gewicht auf die Distanz
-zum nächsten freien Transporter (dieselbe sequenzabhängige Rüstzeit-Logik, die
-OR-Tools exakt löst) macht Koordiniert wieder zuverlässig besser als Greedy - bei
-beiden Kennzahlen, über mehrere Szenario-Familien geprüft.
+sequenzabhängigen Rüstzeiten je Transporter). EINZIGES Optimierungskriterium für alle
+vier Verfahren ist die Gesamtdurchlaufzeit (Summe aller Auftrags-Durchlaufzeiten) -
+Umstiegs-Wartezeit und Repositionierung sind keine eigenen Ziele, sondern Ursachen,
+die sich in der Gesamtdurchlaufzeit niederschlagen; sie tauchen in der App nur noch als
+Erklärung auf, WORAUS sich die Gesamtdurchlaufzeit zusammensetzt (siehe
+`build_lead_time_composition_figure`), nicht als eigene KPI-Kacheln oder
+Vergleichscharts. Kernthema: lokal optimale Disposition je Zone erzeugt an
+Umschlagpunkten Wartezeit, die sich kaskadenartig fortpflanzt und die
+Gesamtdurchlaufzeit verschlechtert - eine zonenübergreifend koordinierte Disposition
+vermeidet das systematisch. Reines "kürzeste Restroute zuerst" ohne
+Repositionierungs-Gewicht wurde zuerst probiert, verlor aber im Sweep über hunderte
+Zufallsszenarien öfter als es gegen Greedy bei der Gesamtdurchlaufzeit gewann, sobald
+Repositionierung Teil des Modells wurde - Greedy blieb trotz seiner Kurzsichtigkeit
+lokal stark genug, dass ihn zu ignorieren mehr kostete, als die globale Sicht
+einbrachte. Erst das zusätzliche Gewicht auf die Distanz zum nächsten freien
+Transporter (dieselbe sequenzabhängige Rüstzeit-Logik, die OR-Tools exakt löst) macht
+Koordiniert wieder zuverlässig besser als Greedy bei der Gesamtdurchlaufzeit, über
+mehrere Szenario-Familien geprüft.
 
 Ein Anteil der Aufträge kann als Express markiert werden (engere Frist). Nur Koordiniert
 (Prioritäts-Faktor 0,5) und OR-Tools (Gewicht 3 im Zielwert, klassische
@@ -75,7 +82,8 @@ from warehouse_ui_panel import render_method_panel
 from warehouse_visualization import (
     build_animation_figure,
     build_kpi_comparison_figure,
-    build_transfer_wait_figure,
+    build_lead_time_composition_figure,
+    build_lead_time_figure,
     build_warehouse_figure,
 )
 
@@ -255,24 +263,24 @@ coordinated_eval = evaluations["coordinated"]
 
 st.markdown("## 🎯 Ihr optimierter Transportplan")
 
-wait_reduction = greedy_eval.total_transfer_wait - coordinated_eval.total_transfer_wait
-wait_reduction_pct = (wait_reduction / greedy_eval.total_transfer_wait * 100) if greedy_eval.total_transfer_wait > 0 else 0.0
+lead_reduction = greedy_eval.total_lead_time - coordinated_eval.total_lead_time
+lead_reduction_pct = (lead_reduction / greedy_eval.total_lead_time * 100) if greedy_eval.total_lead_time > 0 else 0.0
 
 m1, m2, m3, m4 = st.columns(4)
 m1.metric(
-    "Umstiegs-Wartezeit gesamt", f"{coordinated_eval.total_transfer_wait:.0f} min",
-    delta=f"{-wait_reduction:.0f} min ggü. dezentral", delta_color="inverse",
+    "Gesamtdurchlaufzeit", f"{coordinated_eval.total_lead_time:.0f} min",
+    delta=f"{-lead_reduction:.0f} min ggü. dezentral", delta_color="inverse",
 )
-m2.metric("Gesamtdurchlaufzeit", f"{coordinated_eval.total_lead_time:.0f} min")
+m2.metric("Ø Durchlaufzeit je Auftrag", f"{coordinated_eval.avg_lead_time:.1f} min")
 m3.metric("Pünktlichkeit", f"{coordinated_eval.on_time_rate * 100:.0f}%")
 m4.metric("Letzte Auslieferung", f"{coordinated_eval.makespan:.0f} min")
 
-if greedy_eval.total_transfer_wait > 0:
+if lead_reduction > 0:
     st.success(
         f"💡 Im Vergleich zur dezentralen Disposition (jede Zone optimiert nur für sich) spart die "
-        f"zonenübergreifend koordinierte Disposition rund **{wait_reduction:.0f} Minuten** "
-        f"Umstiegs-Wartezeit ({wait_reduction_pct:.0f}% weniger) - Verfahren: "
-        f"{METHOD_LABELS[METHOD_COORDINATED]}."
+        f"zonenübergreifend koordinierte Disposition rund **{lead_reduction:.0f} Minuten Gesamtdurchlaufzeit** "
+        f"({lead_reduction_pct:.0f}% weniger) - Verfahren: {METHOD_LABELS[METHOD_COORDINATED]}. Wie das gelingt, "
+        f"zeigt der Abschnitt unten."
     )
 else:
     st.info("Bei diesem Szenario gibt es kaum Engpässe an Umschlagpunkten - alle Verfahren liegen nah beieinander.")
@@ -318,10 +326,24 @@ nicht. Koordiniert bezieht die Distanz zum nächsten freien Transporter mit eine
 kleinen Gewicht (150 % der SPT-Fahrzeit) in die Priorität ein und bevorzugt bei ähnlich
 dringenden Legs konsequent den näherliegenden - sichtbar an den hellen, schraffierten Balken im
 Gantt-Chart unten (Leerfahrten), die bei Koordiniert spürbar kürzer ausfallen als bei Greedy.
+
+**Beide Effekte zahlen auf dieselbe, einzige Zielgröße ein:** die Gesamtdurchlaufzeit je
+Auftrag. Das folgende Diagramm zeigt sie Auftrag für Auftrag im direkten Vergleich.
 """
 )
 core_evals = {"baseline": evaluations["baseline"], "greedy": greedy_eval, "coordinated": coordinated_eval}
-st.plotly_chart(build_transfer_wait_figure(core_evals), width='stretch', key="transfer_wait_core")
+st.plotly_chart(build_lead_time_figure(core_evals), width='stretch', key="lead_time_core")
+
+st.markdown(
+    """
+**Woraus setzt sich diese Zeit zusammen?** Reine Fahrzeit ist unvermeidbar (die Strecke muss
+gefahren werden), Umstiegszeit ist ein fester Overhead pro Umschlagpunkt - beides ist bei allen
+drei Verfahren identisch, weil sie exakt dieselben Routen fahren. Was sich unterscheidet, ist
+der Rest: Wartezeit auf einen freien Transporter, an Umschlagpunkten und durch Leerfahrten.
+Genau das ist der Hebel, an dem Koordiniert ansetzt.
+"""
+)
+st.plotly_chart(build_lead_time_composition_figure(core_evals, handover), width='stretch', key="composition_core")
 
 st.markdown("---")
 
@@ -423,7 +445,11 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
             compare_evals["ortools"] = evaluate_schedule(ortools_schedule, routes, orders, transporters_per_zone, handover)
 
         st.plotly_chart(build_kpi_comparison_figure(compare_evals), width='stretch', key="kpi_comparison")
-        st.plotly_chart(build_transfer_wait_figure(compare_evals), width='stretch', key="transfer_wait_compare")
+        st.caption(
+            "Einzige Kennzahl, auf die hin disponiert wird: die Gesamtdurchlaufzeit. Die Aufschlüsselung "
+            "darunter zeigt, woraus sie sich zusammensetzt."
+        )
+        st.plotly_chart(build_lead_time_composition_figure(compare_evals, handover), width='stretch', key="composition_compare")
 
         has_express = any(o.is_express for o in orders)
         rows = []
@@ -431,7 +457,7 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
             row = {
                 "Verfahren": METHOD_LABELS.get(method, method),
                 "Gesamtdurchlaufzeit (min)": round(result.total_lead_time, 1),
-                "Umstiegs-Wartezeit (min)": round(result.total_transfer_wait, 1),
+                "Ø je Auftrag (min)": round(result.avg_lead_time, 1),
                 "Pünktlichkeit": f"{result.on_time_rate * 100:.0f}%",
                 "Letzte Auslieferung (min)": round(result.makespan, 1),
             }
@@ -472,14 +498,15 @@ Zielgasse, mit einer festen Umstiegszeit an jedem der beiden Umschlagpunkte.
 Position in Gasse 4. *Leg 1:* Gassen-Shuttle fährt in Gasse 2 zum Hub-Anschluss, sagen wir 3
 Minuten. *Umstieg 1:* feste Umstiegszeit, z. B. 1 Minute, für die Übergabe an den
 Hub-Transporter - plus die Zeit, die Auftrag 7 zusätzlich warten muss, falls gerade kein
-Hub-Transporter frei ist (das ist die **Umstiegs-Wartezeit**, die zentrale Kennzahl dieser
-Demo). *Leg 2:* Hub-Transporter fährt quer durch den Verteiler zum Anschluss von Gasse 4, z.
-B. 4 Minuten. *Umstieg 2:* wieder Umstiegszeit plus eventuelle Wartezeit, diesmal auf ein
-freies Gassen-Shuttle in Gasse 4. *Leg 3:* letztes Stück zur Zielposition, z. B. 2 Minuten.
-Reine Fahrzeit also 9 Minuten plus 2 Minuten Umstiegszeit = 11 Minuten bestenfalls - jede
-zusätzliche Minute, die Auftrag 7 an einem der beiden Umschlagpunkte auf einen freien
-Transporter wartet, zählt in die Umstiegs-Wartezeit, die im Vergleich unten je Verfahren
-sichtbar wird.
+Hub-Transporter frei ist. *Leg 2:* Hub-Transporter fährt quer durch den Verteiler zum
+Anschluss von Gasse 4, z. B. 4 Minuten. *Umstieg 2:* wieder Umstiegszeit plus eventuelle
+Wartezeit, diesmal auf ein freies Gassen-Shuttle in Gasse 4. *Leg 3:* letztes Stück zur
+Zielposition, z. B. 2 Minuten. Reine Fahrzeit also 9 Minuten plus 2 Minuten Umstiegszeit =
+11 Minuten bestenfalls - jede zusätzliche Minute, die Auftrag 7 an einem der beiden
+Umschlagpunkte auf einen freien Transporter wartet, zählt direkt in seine
+**Gesamtdurchlaufzeit** hinein, der einzigen Größe, an der alle vier Verfahren gemessen
+werden. Die Wartezeit selbst ist keine eigene Kennzahl mehr in dieser Demo, sondern nur
+noch ein Bestandteil, den das Aufschlüsselungs-Diagramm oben sichtbar macht.
 
 **Repositionierung:** "Frei" heißt nicht "vor Ort". Steht der einzige freie Gassen-Shuttle
 in Gasse 2 gerade am anderen Ende der Gasse, muss er erst leer zum Lagerplatz von Auftrag 7
@@ -534,10 +561,13 @@ Signal nutzt. Koordiniert und OR-Tools tun das dagegen aktiv (Details unten je V
   Optimierungsziel statt als Heuristik-Regel. Button-gesteuert mit Zeitlimit und Cooldown,
   da rechenintensiver als die eigenen Heuristiken.
 
-**Kern-Kennzahlen:** Nicht nur die Gesamtdurchlaufzeit, sondern ausdrücklich die **kumulierte
-Umstiegs-Wartezeit** - genau die Größe, die bei rein lokaler Disposition unbemerkt wächst,
-während die Gesamtdurchlaufzeit oft ähnlich aussieht - sowie, wenn Express-Aufträge aktiv
-sind, deren **Pünktlichkeit** separat von der Gesamtpünktlichkeit.
+**Kern-Kennzahl:** Ausschließlich die **Gesamtdurchlaufzeit** (Summe bzw. Durchschnitt über
+alle Auftrags-Durchlaufzeiten) - das einzige Kriterium, nach dem alle vier Verfahren
+disponieren und verglichen werden. Umstiegs-Wartezeit und Repositionierung sind keine
+eigenen Ziele, sondern Ursachen, die sich in dieser einen Zahl niederschlagen; die
+Aufschlüsselungs-Diagramme oben und im Vergleichstab zeigen nur, WORAUS sie sich
+zusammensetzt. Zusätzlich verfolgt, wenn Express-Aufträge aktiv sind: deren
+**Pünktlichkeit** separat von der Gesamtpünktlichkeit.
 
 **In einem echten Lager** kämen weitere Nebenbedingungen dazu (Batterie-/Ladezyklen der
 Shuttles, mehrstöckige Hub-Topologien, tatsächliche Kollisionsvermeidung innerhalb einer

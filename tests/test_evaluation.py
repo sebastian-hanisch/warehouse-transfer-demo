@@ -41,11 +41,13 @@ def test_evaluation_on_hand_built_example():
     by_id = {r.order_id: r for r in result.orders}
     assert by_id[0].completion_time == 3.0
     assert by_id[0].lead_time == 3.0
+    assert by_id[0].pure_travel_time == 3.0
     assert by_id[0].transfer_wait == 0.0
     assert by_id[0].n_transfers == 0
 
     assert by_id[1].completion_time == 9.0
     assert by_id[1].lead_time == 9.0
+    assert by_id[1].pure_travel_time == 6.0  # 2 + 4
     assert by_id[1].transfer_wait == 2.0  # 5 - 3
     assert by_id[1].n_transfers == 1
 
@@ -53,6 +55,13 @@ def test_evaluation_on_hand_built_example():
     assert result.total_lead_time == 12.0
     assert result.avg_lead_time == 6.0
     assert result.total_transfer_wait == 2.0
+
+    # composition must sum EXACTLY to avg_lead_time
+    composition = result.avg_lead_time_composition(HANDOVER)
+    assert composition["travel"] == 4.5  # (3 + 6) / 2
+    assert composition["handover"] == 0.5  # (0*1 + 1*1) / 2
+    assert composition["wait"] == 1.0  # (0 + 2) / 2
+    assert composition["travel"] + composition["handover"] + composition["wait"] == result.avg_lead_time
 
     # due dates: order 0 minimal route time = 3 (no transfers)
     expected_due_0 = 0.0 + DUE_DATE_FACTOR * 3.0 + DUE_DATE_BUFFER_MINUTES
@@ -85,6 +94,7 @@ def test_no_orders_returns_neutral_defaults():
     assert result.avg_lead_time == 0.0
     assert result.on_time_rate == 1.0
     assert result.makespan == 0.0
+    assert result.avg_lead_time_composition(HANDOVER) == {"travel": 0.0, "handover": 0.0, "wait": 0.0}
 
 
 def test_express_orders_get_tighter_due_date():

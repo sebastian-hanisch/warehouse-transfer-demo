@@ -21,8 +21,7 @@ def generate_dispatch_pdf(method, evaluation_result, orders_by_id):
     pdf.cell(0, 8, f"Verfahren: {METHOD_LABELS.get(method, method)}", ln=True)
     pdf.cell(0, 8, f"Aufträge: {len(evaluation_result.orders)}", ln=True)
     pdf.cell(0, 8, f"Gesamtdurchlaufzeit: {evaluation_result.total_lead_time:.1f} min", ln=True)
-    pdf.cell(0, 8, f"Durchschn. Durchlaufzeit: {evaluation_result.avg_lead_time:.1f} min", ln=True)
-    pdf.cell(0, 8, f"Umstiegs-Wartezeit gesamt: {evaluation_result.total_transfer_wait:.1f} min", ln=True)
+    pdf.cell(0, 8, f"Durchschn. Durchlaufzeit je Auftrag: {evaluation_result.avg_lead_time:.1f} min", ln=True)
     pdf.cell(0, 8, f"Pünktlichkeit: {evaluation_result.on_time_rate * 100:.0f}%", ln=True)
     has_express = any(r.is_express for r in evaluation_result.orders)
     if has_express:
@@ -30,8 +29,8 @@ def generate_dispatch_pdf(method, evaluation_result, orders_by_id):
     pdf.ln(4)
 
     pdf.set_font("Helvetica", "B", 9)
-    headers = ["Auftrag", "Exp.", "Von -> Nach", "Start", "Ankunft", "Laufzeit", "Umstiege", "Wartezeit", "Termin"]
-    widths = [14, 12, 47, 18, 20, 18, 16, 20, 18]
+    headers = ["Auftrag", "Exp.", "Von -> Nach", "Start", "Ankunft", "Laufzeit", "Umstiege", "davon Wartez.", "Termin"]
+    widths = [14, 12, 44, 18, 20, 18, 16, 23, 18]
     for h, w in zip(headers, widths):
         pdf.cell(w, 7, h, border=1)
     pdf.ln()

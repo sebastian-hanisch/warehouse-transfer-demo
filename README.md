@@ -16,7 +16,10 @@ VRP-Sonderproblem, bei dem Ladung an definierten Umschlagpunkten das Fahrzeug we
 Der Fokus der Demo: **lokal optimale Disposition je Zone erzeugt an Umschlagpunkten
 Wartezeit und schickt Transporter unnötig durchs Lager – beides pflanzt sich
 kaskadenartig fort** – und eine zonenübergreifend koordinierte Disposition vermeidet
-das systematisch.
+das systematisch. Einziges Optimierungs- und Vergleichskriterium für alle vier Verfahren
+ist dabei die **Gesamtdurchlaufzeit**: Umstiegs-Wartezeit und Repositionierung sind keine
+eigenen Ziele, sondern Ursachen, die sich in dieser einen Zahl niederschlagen und in der
+App nur noch als Aufschlüsselung erklärt werden, woraus sie sich zusammensetzt.
 
 Vier Dispositionsverfahren im direkten Vergleich, alle auf demselben Lagergraphen und mit
 derselben Kennzahlen-Berechnung ausgewertet:
@@ -64,11 +67,13 @@ gesetzte Prioritäten in der Praxis oft schlicht nicht respektiert.
   zwischen zwei Aufträgen leer zum nächsten Einstiegsknoten fahren – reale Netzwerk-Distanz,
   keine Pauschale. Im Gantt-Chart als helle, schraffierte Balken vor dem eigentlichen Leg
   sichtbar.
-- Kern-Kennzahlen für den Vergleich sind nicht nur die Gesamtdurchlaufzeit, sondern
-  ausdrücklich die **kumulierte Umstiegs-Wartezeit** – genau die Größe, die bei rein
-  lokaler Disposition unbemerkt wächst, während die Gesamtdurchlaufzeit oft ähnlich
-  aussieht – sowie, bei aktiven Express-Aufträgen, deren **Pünktlichkeit** separat von der
-  Gesamtpünktlichkeit.
+- Kern-Kennzahl für den Vergleich ist ausschließlich die **Gesamtdurchlaufzeit** – das
+  einzige Kriterium, nach dem alle vier Verfahren disponieren und verglichen werden.
+  Umstiegs-Wartezeit und Repositionierung tauchen nur noch in einer Aufschlüsselung
+  (gestapeltes Balkendiagramm: reine Fahrzeit / feste Umstiegszeit / Warten) als Erklärung
+  auf, woraus sich diese eine Zahl zusammensetzt – nicht mehr als eigene KPI-Kachel oder
+  eigenes Vergleichschart. Bei aktiven Express-Aufträgen wird zusätzlich deren
+  **Pünktlichkeit** separat von der Gesamtpünktlichkeit verfolgt.
 - Ein Beispielszenario ("Stoßzeit mit Engpass am Umschlagpunkt") ist bewusst so
   eingestellt (nicht zufällig getroffen), dass die Lücke zwischen dezentral und
   koordiniert deutlich sichtbar wird.
