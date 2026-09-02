@@ -4,7 +4,7 @@ notion of "good"."""
 
 from dataclasses import dataclass
 
-from warehouse_constants import DUE_DATE_BUFFER_MINUTES, DUE_DATE_FACTOR, DUE_DATE_FACTOR_EXPRESS
+from warehouse_constants import DUE_DATE_BUFFER_MINUTES, DUE_DATE_BUFFER_MINUTES_EXPRESS
 
 
 @dataclass
@@ -25,7 +25,6 @@ class OrderResult:
 class EvaluationResult:
     method: str
     orders: list  # list[OrderResult]
-    zone_utilization: dict  # zone_id -> share in [0, 1]
     makespan: float
 
     @property
@@ -79,7 +78,7 @@ def minimal_route_time(route, handover_minutes):
     return travel + route.n_transfers * handover_minutes
 
 
-def evaluate_schedule(schedule, routes, orders, transporters_per_zone, handover_minutes):
+def evaluate_schedule(schedule, routes, orders, handover_minutes):
     by_order = {}
     for a in schedule.assignments:
         by_order.setdefault(a.order_id, []).append(a)
@@ -96,8 +95,8 @@ def evaluate_schedule(schedule, routes, orders, transporters_per_zone, handover_
         lead_time = completion_time - order.release_time
         pure_travel_time = sum(leg.travel_time for leg in route.legs)
         transfer_wait = sum(max(a.start - a.ready_time, 0.0) for a in legs if a.leg_index > 0)
-        due_date_factor = DUE_DATE_FACTOR_EXPRESS if order.is_express else DUE_DATE_FACTOR
-        due_time = order.release_time + due_date_factor * minimal_route_time(route, handover_minutes) + DUE_DATE_BUFFER_MINUTES
+        buffer_minutes = DUE_DATE_BUFFER_MINUTES_EXPRESS if order.is_express else DUE_DATE_BUFFER_MINUTES
+        due_time = order.release_time + minimal_route_time(route, handover_minutes) + buffer_minutes
         order_results.append(
             OrderResult(
                 order_id=order_id,
@@ -116,18 +115,8 @@ def evaluate_schedule(schedule, routes, orders, transporters_per_zone, handover_
 
     order_results.sort(key=lambda r: r.order_id)
 
-    busy_time = {zone_id: 0.0 for zone_id in transporters_per_zone}
-    for a in schedule.assignments:
-        busy_time[a.zone_id] += a.end - a.start
-
-    zone_utilization = {}
-    for zone_id, capacity in transporters_per_zone.items():
-        denom = capacity * makespan
-        zone_utilization[zone_id] = busy_time[zone_id] / denom if denom > 0 else 0.0
-
     return EvaluationResult(
         method=schedule.method,
         orders=order_results,
-        zone_utilization=zone_utilization,
         makespan=makespan,
     )

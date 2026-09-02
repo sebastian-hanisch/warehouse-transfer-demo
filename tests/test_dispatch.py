@@ -140,8 +140,8 @@ def test_coordinated_reduces_transfer_wait_under_hub_bottleneck():
     greedy_schedule = dispatch_greedy(net, routes, orders, transporters_per_zone, HANDOVER)
     coordinated_schedule = dispatch_coordinated(net, routes, orders, transporters_per_zone, HANDOVER)
 
-    greedy_eval = evaluate_schedule(greedy_schedule, routes, orders, transporters_per_zone, HANDOVER)
-    coordinated_eval = evaluate_schedule(coordinated_schedule, routes, orders, transporters_per_zone, HANDOVER)
+    greedy_eval = evaluate_schedule(greedy_schedule, routes, orders, HANDOVER)
+    coordinated_eval = evaluate_schedule(coordinated_schedule, routes, orders, HANDOVER)
 
     assert coordinated_eval.total_transfer_wait <= greedy_eval.total_transfer_wait
 
@@ -162,10 +162,10 @@ def test_coordinated_does_not_lose_on_lead_time_in_aggregate():
     for seed in range(n_seeds):
         net, orders, routes, transporters_per_zone = build_scenario(seed=seed)
         greedy_eval = evaluate_schedule(
-            dispatch_greedy(net, routes, orders, transporters_per_zone, HANDOVER), routes, orders, transporters_per_zone, HANDOVER
+            dispatch_greedy(net, routes, orders, transporters_per_zone, HANDOVER), routes, orders, HANDOVER
         )
         coordinated_eval = evaluate_schedule(
-            dispatch_coordinated(net, routes, orders, transporters_per_zone, HANDOVER), routes, orders, transporters_per_zone, HANDOVER
+            dispatch_coordinated(net, routes, orders, transporters_per_zone, HANDOVER), routes, orders, HANDOVER
         )
         diff = coordinated_eval.total_lead_time - greedy_eval.total_lead_time
         total_diff += diff
@@ -194,10 +194,10 @@ def test_coordinated_improves_express_on_time_rate_vs_greedy():
             n_orders=30, horizon_minutes=20.0, cross_zone_share=0.8, express_share=0.3, seed=seed,
         )
         greedy_eval = evaluate_schedule(
-            dispatch_greedy(net, routes, orders, transporters_per_zone, HANDOVER), routes, orders, transporters_per_zone, HANDOVER
+            dispatch_greedy(net, routes, orders, transporters_per_zone, HANDOVER), routes, orders, HANDOVER
         )
         coordinated_eval = evaluate_schedule(
-            dispatch_coordinated(net, routes, orders, transporters_per_zone, HANDOVER), routes, orders, transporters_per_zone, HANDOVER
+            dispatch_coordinated(net, routes, orders, transporters_per_zone, HANDOVER), routes, orders, HANDOVER
         )
         diff = coordinated_eval.on_time_rate_express - greedy_eval.on_time_rate_express
         if diff > 1e-9:

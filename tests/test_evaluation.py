@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from warehouse_constants import DUE_DATE_BUFFER_MINUTES, DUE_DATE_FACTOR, DUE_DATE_FACTOR_EXPRESS
+from warehouse_constants import DUE_DATE_BUFFER_MINUTES, DUE_DATE_BUFFER_MINUTES_EXPRESS
 from warehouse_dispatch_core import LegAssignment, Schedule
 from warehouse_demand import Order
 from warehouse_evaluation import evaluate_schedule
@@ -34,9 +34,8 @@ def test_evaluation_on_hand_built_example():
                       start=5.0, end=9.0, ready_time=3.0, transporter_id="hub#0"),
     ]
     schedule = Schedule(method="test", assignments=assignments)
-    transporters_per_zone = {"aisle_0": 1, "aisle_1": 1, "hub": 1}
 
-    result = evaluate_schedule(schedule, routes, orders, transporters_per_zone, HANDOVER)
+    result = evaluate_schedule(schedule, routes, orders, HANDOVER)
 
     by_id = {r.order_id: r for r in result.orders}
     assert by_id[0].completion_time == 3.0
@@ -64,33 +63,19 @@ def test_evaluation_on_hand_built_example():
     assert composition["travel"] + composition["handover"] + composition["wait"] == result.avg_lead_time
 
     # due dates: order 0 minimal route time = 3 (no transfers)
-    expected_due_0 = 0.0 + DUE_DATE_FACTOR * 3.0 + DUE_DATE_BUFFER_MINUTES
+    expected_due_0 = 0.0 + 3.0 + DUE_DATE_BUFFER_MINUTES
     assert by_id[0].due_time == expected_due_0
     assert by_id[0].on_time is True
 
     # order 1 minimal route time = 2 + 4 + 1*handover = 7
-    expected_due_1 = 0.0 + DUE_DATE_FACTOR * 7.0 + DUE_DATE_BUFFER_MINUTES
+    expected_due_1 = 0.0 + 7.0 + DUE_DATE_BUFFER_MINUTES
     assert by_id[1].due_time == expected_due_1
     assert by_id[1].on_time is (9.0 <= expected_due_1)
 
 
-def test_zone_utilization_matches_busy_fraction():
-    routes = {0: Route(order_id=0, legs=[Leg("aisle_0", "n1", "n2", 4.0)])}
-    orders = [Order(0, "n1", "aisle_0", "n2", "aisle_0", release_time=0.0)]
-    assignments = [
-        LegAssignment(order_id=0, leg_index=0, zone_id="aisle_0", entry_node="n1", exit_node="n2",
-                      start=0.0, end=4.0, ready_time=0.0, transporter_id="aisle_0#0"),
-    ]
-    schedule = Schedule(method="test", assignments=assignments)
-    transporters_per_zone = {"aisle_0": 2}
-    result = evaluate_schedule(schedule, routes, orders, transporters_per_zone, HANDOVER)
-    # makespan = 4, busy_time = 4, capacity = 2 -> utilization = 4 / (2*4) = 0.5
-    assert result.zone_utilization["aisle_0"] == 0.5
-
-
 def test_no_orders_returns_neutral_defaults():
     schedule = Schedule(method="test", assignments=[])
-    result = evaluate_schedule(schedule, {}, [], {"aisle_0": 1}, HANDOVER)
+    result = evaluate_schedule(schedule, {}, [], HANDOVER)
     assert result.avg_lead_time == 0.0
     assert result.on_time_rate == 1.0
     assert result.makespan == 0.0
@@ -98,8 +83,9 @@ def test_no_orders_returns_neutral_defaults():
 
 
 def test_express_orders_get_tighter_due_date():
-    # Same route for both, one flagged express - only the due-date factor
-    # should differ; DUE_DATE_FACTOR_EXPRESS < DUE_DATE_FACTOR by design.
+    # Same route for both, one flagged express - only the fixed buffer
+    # should differ; DUE_DATE_BUFFER_MINUTES_EXPRESS < DUE_DATE_BUFFER_MINUTES
+    # by design, added on top of the same route-derived minimum for both.
     routes = {
         0: Route(order_id=0, legs=[Leg("aisle_0", "n1", "n2", 3.0)]),
         1: Route(order_id=1, legs=[Leg("aisle_0", "n1", "n2", 3.0)]),
@@ -115,13 +101,13 @@ def test_express_orders_get_tighter_due_date():
                       start=0.0, end=3.0, ready_time=0.0, transporter_id="aisle_0#1"),
     ]
     schedule = Schedule(method="test", assignments=assignments)
-    result = evaluate_schedule(schedule, routes, orders, {"aisle_0": 2}, HANDOVER)
+    result = evaluate_schedule(schedule, routes, orders, HANDOVER)
 
     by_id = {r.order_id: r for r in result.orders}
     assert by_id[0].is_express is False
     assert by_id[1].is_express is True
-    assert by_id[0].due_time == 0.0 + DUE_DATE_FACTOR * 3.0 + DUE_DATE_BUFFER_MINUTES
-    assert by_id[1].due_time == 0.0 + DUE_DATE_FACTOR_EXPRESS * 3.0 + DUE_DATE_BUFFER_MINUTES
+    assert by_id[0].due_time == 0.0 + 3.0 + DUE_DATE_BUFFER_MINUTES
+    assert by_id[1].due_time == 0.0 + 3.0 + DUE_DATE_BUFFER_MINUTES_EXPRESS
     assert by_id[1].due_time < by_id[0].due_time
 
 
@@ -144,7 +130,7 @@ def test_on_time_rate_express_ignores_non_express_orders():
                       start=0.0, end=3.0, ready_time=0.0, transporter_id="aisle_0#1"),
     ]
     schedule = Schedule(method="test", assignments=assignments)
-    result = evaluate_schedule(schedule, routes, orders, {"aisle_0": 2}, HANDOVER)
+    result = evaluate_schedule(schedule, routes, orders, HANDOVER)
 
     assert result.on_time_rate == 0.5
     assert result.on_time_rate_express == 1.0
@@ -158,5 +144,5 @@ def test_on_time_rate_express_defaults_to_one_without_express_orders():
                       start=0.0, end=999.0, ready_time=0.0, transporter_id="aisle_0#0"),
     ]
     schedule = Schedule(method="test", assignments=assignments)
-    result = evaluate_schedule(schedule, routes, orders, {"aisle_0": 1}, HANDOVER)
+    result = evaluate_schedule(schedule, routes, orders, HANDOVER)
     assert result.on_time_rate_express == 1.0

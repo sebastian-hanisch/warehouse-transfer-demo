@@ -52,12 +52,14 @@ MIN_SEED = 0
 MAX_SEED = 9999
 
 # Due dates (derived, not user-facing sliders): due_time = release_time +
-# factor * theoretical minimum route time + DUE_DATE_BUFFER_MINUTES. Express
-# orders get a tighter factor - the same generous buffer, but less slack
-# multiplied onto the minimum route time.
-DUE_DATE_FACTOR = 3.0
-DUE_DATE_FACTOR_EXPRESS = 1.5
-DUE_DATE_BUFFER_MINUTES = 5.0
+# theoretical minimum route time + a FIXED extra allowance in minutes -
+# additive, not a multiplier on the minimum route time, so a long route
+# doesn't earn proportionally more slack than a short one just for being
+# long. Express orders get a smaller fixed allowance than normal orders;
+# every order's deadline still stays at least the theoretical minimum
+# above release time, so it's always physically reachable.
+DUE_DATE_BUFFER_MINUTES = 20.0
+DUE_DATE_BUFFER_MINUTES_EXPRESS = 8.0
 
 # Share of orders flagged as express (tighter due date). Only the coordinated
 # heuristic and OR-Tools actually use the flag as a dispatch signal - baseline

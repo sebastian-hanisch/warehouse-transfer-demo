@@ -127,7 +127,7 @@ def _run_own_methods(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cr
         "coordinated": dispatch_coordinated(network, routes, orders, tpz, handover),
     }
     evaluations = {
-        method: evaluate_schedule(schedule, routes, orders, tpz, handover) for method, schedule in schedules.items()
+        method: evaluate_schedule(schedule, routes, orders, handover) for method, schedule in schedules.items()
     }
     return schedules, evaluations
 
@@ -428,7 +428,7 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
 
             if ortools_schedule is not None and not stale:
                 st.caption(f"Status: {status_label(st.session_state['ortools_status'])}")
-                ortools_eval = evaluate_schedule(ortools_schedule, routes, orders, transporters_per_zone, handover)
+                ortools_eval = evaluate_schedule(ortools_schedule, routes, orders, handover)
                 render_method_panel("ortools", ortools_schedule, ortools_eval, orders_by_id, network, transporters_per_zone)
             elif ortools_schedule is not None and stale:
                 st.info("Eingaben haben sich geändert - bitte erneut lösen.")
@@ -442,7 +442,7 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
         ortools_schedule = st.session_state.get("ortools_schedule")
         current_key = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover)
         if ortools_schedule is not None and st.session_state.get("ortools_scenario_key") == current_key:
-            compare_evals["ortools"] = evaluate_schedule(ortools_schedule, routes, orders, transporters_per_zone, handover)
+            compare_evals["ortools"] = evaluate_schedule(ortools_schedule, routes, orders, handover)
 
         st.plotly_chart(build_kpi_comparison_figure(compare_evals), width='stretch', key="kpi_comparison")
         st.caption(
@@ -520,10 +520,12 @@ seine Position immer von seinem letzten Auftrag ab.
 bewusst zonenübergreifend, damit Umstiege im Standardfall tatsächlich auftreten - sonst zeigt
 der Kernvergleich unten keinen Unterschied (siehe Preset "Kleines Lager, wenig Verkehr").
 
-**Express-Aufträge (🚀):** Ein einstellbarer Anteil der Aufträge bekommt eine engere Frist
-(Faktor 1,5 statt 3,0 auf die theoretische Mindestlaufzeit). Interessant ist nicht die
-Frist selbst, sondern wer sie überhaupt beachtet: Unoptimiert und Dezentral/Greedy ignorieren
-die Markierung bewusst - beide bleiben bei ihrer jeweiligen Logik (Ankunftsreihenfolge bzw.
+**Express-Aufträge (🚀):** Ein einstellbarer Anteil der Aufträge bekommt eine engere Frist:
+`Freigabe + theoretische Mindestlaufzeit + fester Puffer` (Normal: 20 min, Express: 8 min) -
+additiv, nicht proportional zur Routenlänge, damit ein langer Auftrag nicht allein wegen
+seiner Länge mehr absolute Luft bekommt als ein kurzer, egal ob Normal oder Express. Interessant
+ist nicht die Frist selbst, sondern wer sie überhaupt beachtet: Unoptimiert und Dezentral/Greedy
+ignorieren die Markierung bewusst - beide bleiben bei ihrer jeweiligen Logik (Ankunftsreihenfolge bzw.
 kürzeste Fahrzeit), egal ob ein Auftrag als dringend markiert ist oder nicht. Das ist keine
 Vereinfachung, sondern der Punkt: ein rein lokales oder unkoordiniertes System disponiert in
 der Praxis oft tatsächlich an gesetzten Prioritäten vorbei, weil es sie schlicht nicht als

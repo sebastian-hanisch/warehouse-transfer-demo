@@ -40,13 +40,13 @@ def test_ortools_at_least_as_good_as_coordinated_heuristic_on_small_instance():
         n_orders=8, horizon_minutes=15.0, cross_zone_share=0.8, seed=3,
     )
     coordinated_schedule = dispatch_coordinated(net, routes, orders, transporters_per_zone, HANDOVER)
-    coordinated_eval = evaluate_schedule(coordinated_schedule, routes, orders, transporters_per_zone, HANDOVER)
+    coordinated_eval = evaluate_schedule(coordinated_schedule, routes, orders, HANDOVER)
 
     ortools_schedule, status = solve_ortools(
         net, routes, orders, transporters_per_zone, HANDOVER, time_limit_seconds=5, horizon_minutes=15.0
     )
     assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
-    ortools_eval = evaluate_schedule(ortools_schedule, routes, orders, transporters_per_zone, HANDOVER)
+    ortools_eval = evaluate_schedule(ortools_schedule, routes, orders, HANDOVER)
 
     # OR-Tools optimizes on a discretized time grid (SCALE units), so it can
     # be a hair worse than the continuous-time heuristic purely from
