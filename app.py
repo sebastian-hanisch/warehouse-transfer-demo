@@ -67,6 +67,7 @@ import time
 
 import pandas as pd
 import streamlit as st
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from warehouse_constants import (
     DEFAULT_AISLE_SPEED,
@@ -146,6 +147,23 @@ def _run_own_methods(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cr
         method: evaluate_schedule(schedule, routes, orders, handover) for method, schedule in schedules.items()
     }
     return schedules, evaluations
+
+
+def _rerun_fragment_or_app():
+    """st.rerun(scope="fragment") only works while an actual fragment
+    rerun is in progress - calling it while the fragment's body is merely
+    being executed as PART OF a full-app rerun raises
+    StreamlitInvalidLayoutContextError (this happens right after the
+    ortools solve's own st.rerun() below, since that's a full rerun and
+    _render_ortools_tab() runs again as part of it, immediately hitting
+    the still-active cooldown branch). ctx.fragment_ids_this_run is empty
+    exactly in that situation - fall back to a full rerun there instead of
+    crashing."""
+    ctx = get_script_run_ctx()
+    if ctx and ctx.fragment_ids_this_run:
+        st.rerun(scope="fragment")
+    else:
+        st.rerun()
 
 
 st.set_page_config(page_title="Lagerlogistik – Sebastian Hanisch", layout="wide")
@@ -415,11 +433,16 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
                 # A plain st.rerun() only recomputes this on the NEXT user
                 # interaction - without it, the countdown sits frozen at
                 # whatever it showed right after solving, and the disabled
-                # button stays disabled-looking indefinitely. scope="fragment"
-                # reruns only this fragment (not the whole page/other tabs),
-                # so the countdown ticks live without disturbing anything else.
+                # button stays disabled-looking indefinitely. Prefers
+                # scope="fragment" (fires up to once a second while the
+                # cooldown ticks down, and a full rerun that often would
+                # needlessly re-simulate baseline/greedy/coordinated on
+                # every tick) but falls back to a full rerun on the one
+                # pass right after the solve's own full st.rerun() below,
+                # where scope="fragment" would raise (see
+                # _rerun_fragment_or_app's docstring).
                 time.sleep(min(remaining, 1.0))
-                st.rerun(scope="fragment")
+                _rerun_fragment_or_app()
 
             if solve_clicked:
                 with st.spinner("OR-Tools löst..."):
@@ -429,15 +452,21 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
                 st.session_state["ortools_schedule"] = schedule
                 st.session_state["ortools_status"] = status
                 st.session_state["ortools_scenario_key"] = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover)
-                # cooldown_active above was computed BEFORE this solve (using
-                # the previous run's timestamp), so this render would still
-                # show the button as enabled and no countdown - immediately
-                # rerun the fragment so the cooldown just started actually
-                # takes effect instead of only becoming visible on some
-                # unrelated later interaction (the real bug: a user could
-                # otherwise click solve again immediately, with no cooldown
-                # ever having visibly kicked in).
-                st.rerun(scope="fragment")
+                # A fragment-scoped rerun here would only patch THIS
+                # fragment's own DOM region - the Vergleich tab (tabs[4],
+                # outside the fragment) reads ortools_schedule too, but
+                # would keep showing whatever it rendered during the last
+                # FULL script run (i.e. without OR-Tools) until some
+                # unrelated full rerun happened elsewhere on the page - a
+                # real bug found live (OR-Tools missing from the Vergleich
+                # comparison right after solving). A full st.rerun() (no
+                # scope, even though we're inside a fragment) re-executes
+                # the whole script exactly once per solve, which is cheap
+                # relative to the solve itself, and is what actually
+                # propagates the new schedule to the rest of the page -
+                # also happens to fix the cooldown-not-showing-immediately
+                # issue this rerun always existed for.
+                st.rerun()
 
             current_key = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover)
             stale = st.session_state.get("ortools_scenario_key") != current_key
