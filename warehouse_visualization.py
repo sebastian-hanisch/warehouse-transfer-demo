@@ -74,7 +74,13 @@ def build_gantt_figure(schedule, network, transporters_per_zone):
     fig = go.Figure()
     legend_shown = False
     for a in sorted(schedule.assignments, key=lambda a: a.start):
-        wait = max(a.start - a.ready_time, 0.0)  # same definition as warehouse_evaluation.py's transfer_wait
+        wait = max(a.start - a.ready_time, 0.0)
+        # Only leg_index > 0 is an actual Umschlagpunkt-Umstieg - matches
+        # warehouse_evaluation.py's transfer_wait (which sums the same
+        # quantity under the same leg_index > 0 filter) and n_transfers, so
+        # this label agrees with the order table instead of calling a
+        # first-leg pickup delay a "transfer" wait it isn't.
+        wait_label = "Umstiegs-Wartezeit" if a.leg_index > 0 else "Wartezeit auf Abholung"
         if a.repositioning_time > 0:
             fig.add_trace(
                 go.Bar(
@@ -106,7 +112,7 @@ def build_gantt_figure(schedule, network, transporters_per_zone):
                     f"Auftrag {a.order_id}, Leg {a.leg_index}<br>"
                     f"{a.entry_node} -> {a.exit_node}<br>"
                     f"{a.start:.1f} - {a.end:.1f} min<br>"
-                    f"Umstiegs-Wartezeit: {wait:.1f} min"
+                    f"{wait_label}: {wait:.1f} min"
                 ),
                 hoverinfo="text",
                 showlegend=False,
