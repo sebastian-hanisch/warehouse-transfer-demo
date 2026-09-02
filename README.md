@@ -22,10 +22,12 @@ derselben Kennzahlen-Berechnung ausgewertet:
 - **Dezentral je Zone (Greedy):** jede Zone dispatcht lokal nach kürzester Fahrzeit
   (Shortest Processing Time, SPT) – ein textbuchmäßig lokal-optimales Verfahren, das aber
   blind dafür ist, ob ein Auftrag noch einen Umstieg vor sich hat.
-- **Koordiniert (eigene Heuristik):** Aufträge, die schon einmal umgestiegen sind, haben
-  Vorrang vor frischen Aufträgen; als Tie-Break gewinnt die Order mit dem meisten
-  verbleibenden Arbeitsaufwand (klassische Most-Work-Remaining-Regel aus der
-  Job-Shop-Literatur).
+- **Koordiniert (eigene Heuristik):** Shortest-Remaining-Work-First (SRPT) über die
+  *gesamte* verbleibende Reise eines Auftrags, nicht nur den aktuellen Leg – die
+  natürliche Verallgemeinerung von SPT (für eine einzelne Ressource nachweislich optimal
+  zur Minimierung der Summe der Fertigstellungszeiten) auf ein mehrstufiges System.
+  Greedy kennt nur die Dauer des aktuellen Legs; Koordiniert kennt die gesamte Route und
+  bevorzugt Aufträge, die ihrer Fertigstellung schon nahe sind.
 - **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer, `AddCumulative` je Zone
   begrenzt die gleichzeitig aktiven Legs auf die Anzahl Transporter, eine
   Präzedenzbedingung erzwingt die Umstiegssynchronisation. Ziel: minimale
@@ -45,9 +47,11 @@ derselben Kennzahlen-Berechnung ausgewertet:
   aussieht.
 - Ein Beispielszenario ("Stoßzeit mit Engpass am Umschlagpunkt") ist bewusst so
   eingestellt (nicht zufällig getroffen), dass die Lücke zwischen dezentral und
-  koordiniert deutlich sichtbar wird – dabei zeigt sich ehrlich auch der Trade-off: die
-  koordinierte Heuristik senkt die Umstiegs-Wartezeit in diesem Szenario um rund 70 %,
-  auf Kosten einer etwas niedrigeren Pünktlichkeit für ein paar Grenzfälle.
+  koordiniert deutlich sichtbar wird: die koordinierte Heuristik senkt die
+  Umstiegs-Wartezeit in diesem Szenario um rund 55 %, bei gleichzeitig niedrigerer
+  Gesamtdurchlaufzeit als die unoptimierte Basis und ohne Pünktlichkeits-Einbußen –
+  Minimierung der Umstiegs-Wartezeit und der Gesamtdurchlaufzeit ziehen hier in
+  dieselbe Richtung, nicht gegeneinander.
 - Animierte Paket-Bewegung, Gantt-Chart je Transporter, PDF-Export, Permalink.
 
 ## Dateistruktur
@@ -60,7 +64,7 @@ derselben Kennzahlen-Berechnung ausgewertet:
 | `warehouse_demand.py` | Auftragsgenerierung |
 | `warehouse_routing.py` | Zonen-Pfad je Auftrag (Legs) |
 | `warehouse_dispatch_core.py` | Gemeinsamer Discrete-Event-Simulator für die drei eigenen Verfahren |
-| `warehouse_dispatch_baseline.py` / `_greedy.py` / `_coordinated.py` | Die drei Prioritätsregeln (FCFS / SPT / Continuation+MWKR) |
+| `warehouse_dispatch_baseline.py` / `_greedy.py` / `_coordinated.py` | Die drei Prioritätsregeln (FCFS / lokales SPT / globales SRPT über die Restroute) |
 | `warehouse_ortools_solver.py` | CP-SAT-Modell |
 | `warehouse_evaluation.py` | Gemeinsame KPI-Berechnung |
 | `warehouse_visualization.py` | Lagerschema, Gantt-Chart, Animation, KPI-Vergleich |

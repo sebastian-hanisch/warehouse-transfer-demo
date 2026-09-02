@@ -8,10 +8,13 @@ Transporter dürfen ihre eigene Zone nicht verlassen, zonenübergreifende Auftr�
 müssen an einem Umschlagpunkt auf den nächsten Transporter umsteigen.
 
 Vier Dispositionsverfahren im Vergleich: Unoptimiert (FCFS), Dezentral je Zone
-(Greedy/SPT), Koordiniert (eigene Heuristik: Fortsetzungen zuerst, dann Most-Work-
-Remaining) und OR-Tools (CP-SAT). Kernthema: lokal optimale Disposition je Zone
-erzeugt an Umschlagpunkten Wartezeit, die sich kaskadenartig fortpflanzt - eine
-zonenübergreifend koordinierte Disposition vermeidet das systematisch.
+(Greedy: lokales SPT je Leg), Koordiniert (eigene Heuristik: globales SRPT über die
+gesamte Restroute eines Auftrags) und OR-Tools (CP-SAT). Kernthema: lokal optimale
+Disposition je Zone erzeugt an Umschlagpunkten Wartezeit, die sich kaskadenartig
+fortpflanzt - eine zonenübergreifend koordinierte Disposition vermeidet das
+systematisch UND minimiert nebenbei die Gesamtdurchlaufzeit besser, weil SRPT über
+die volle Restroute die richtige Verallgemeinerung des für Summen-Fertigstellungszeit
+optimalen SPT-Prinzips auf ein mehrstufiges System ist.
 
 Selbe Struktur wie bei den anderen Demos in diesem Workspace: Ergebnis zuerst,
 vollständiger Methodenvergleich sekundär im Expander, dazu "Wie funktioniert diese
@@ -224,11 +227,12 @@ st.markdown(
 Alle drei eigenen Verfahren unten lösen **exakt dasselbe Szenario** (gleicher Lagergraph,
 gleiche Transporterzahl, gleiche Aufträge) - sie unterscheiden sich nur darin, in welcher
 Reihenfolge ein frei werdender Transporter unter mehreren wartenden Aufträgen wählt.
-**Dezentral/Greedy** wählt lokal je Zone die kürzeste Fahrzeit (Shortest Processing Time) -
-blind dafür, ob ein Auftrag noch einen Umstieg vor sich hat. **Koordiniert** bevorzugt
-Aufträge, die schon einmal umgestiegen sind, und danach die Order mit dem meisten
-verbleibenden Arbeitsaufwand (Most Work Remaining) - eine zonenübergreifende Sicht, die
-Greedy fehlt.
+**Dezentral/Greedy** wählt lokal je Zone die kürzeste Fahrzeit des aktuellen Legs (Shortest
+Processing Time) - blind dafür, wie viel Reise ein Auftrag insgesamt noch vor sich hat.
+**Koordiniert** kennt die gesamte Restroute jedes Auftrags über alle Zonen hinweg und
+bevorzugt, wer davon am wenigsten übrig hat (Shortest-Remaining-Work-First) - die
+natürliche Verallgemeinerung des für eine einzelne Ressource optimalen SPT-Prinzips auf
+ein mehrstufiges System, und genau die zonenübergreifende Sicht, die Greedy fehlt.
 """
 )
 core_evals = {"baseline": evaluations["baseline"], "greedy": greedy_eval, "coordinated": coordinated_eval}
@@ -255,8 +259,8 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
     with tabs[2]:
         render_method_panel(
             "coordinated", schedules["coordinated"], evaluations["coordinated"], orders_by_id, network, transporters_per_zone,
-            extra_caption="Aufträge, die schon einmal umgestiegen sind, haben Vorrang; sonst gewinnt die Order mit "
-                          "dem meisten verbleibenden Arbeitsaufwand (Most Work Remaining).",
+            extra_caption="Kennt die gesamte Restroute jedes Auftrags; wer davon am wenigsten übrig hat, wird "
+                          "zuerst bedient (Shortest-Remaining-Work-First).",
         )
 
     with tabs[3]:
@@ -351,13 +355,13 @@ der Kernvergleich unten keinen Unterschied (siehe Preset "Kleines Lager, wenig V
 
 **Vier Dispositionsverfahren, alle mit derselben Kennzahlen-Berechnung ausgewertet:**
 - **Unoptimiert (FCFS):** keine Prioritätslogik, wer zuerst bereit ist, wird zuerst bedient.
-- **Dezentral/Greedy:** jede Zone dispatcht lokal nach kürzester Fahrzeit (Shortest Processing
-  Time, SPT) - ein lokal sinnvolles, aber blind gegenüber noch offenen Umstiegen agierendes
-  Verfahren.
-- **Koordiniert:** eine eigene Heuristik, die Fortsetzungen (Aufträge, die schon einmal
-  umgestiegen sind) vor frischen Aufträgen bevorzugt, und als Tie-Break die Order mit dem
-  meisten verbleibenden Arbeitsaufwand wählt (Most-Work-Remaining, eine klassische
-  Job-Shop-Dispatchregel).
+- **Dezentral/Greedy:** jede Zone dispatcht lokal nach kürzester Fahrzeit des aktuellen Legs
+  (Shortest Processing Time, SPT) - für eine einzelne Ressource nachweislich optimal zur
+  Minimierung der Summe der Fertigstellungszeiten, aber blind dafür, wie viel Reise ein
+  Auftrag über die eigene Zone hinaus noch vor sich hat.
+- **Koordiniert:** eine eigene Heuristik, die SPT auf die *gesamte* Restroute eines
+  Auftrags verallgemeinert (Shortest-Remaining-Work-First) - kennt jeden Auftrag über alle
+  Zonen hinweg und bevorzugt, wer seiner Fertigstellung am nächsten ist.
 - **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer, `AddCumulative` je Zone
   begrenzt gleichzeitig aktive Legs auf die Anzahl Transporter, eine Präzedenzbedingung
   erzwingt die Umstiegssynchronisation. Ziel: minimale Gesamtdurchlaufzeit. Button-gesteuert
@@ -403,9 +407,9 @@ Die drei eigenen Heuristiken lösen strukturell dasselbe Problem über eine erei
 Simulation (`warehouse_dispatch_core.py`): sobald ein Transporter frei wird UND mindestens ein
 Leg bereit ist, wird der Leg mit der höchsten Priorität zugewiesen - Start = aktueller
 Zeitpunkt. Die drei Verfahren unterscheiden sich ausschließlich in der Prioritätsfunktion
-(konstant bei FCFS, kürzeste Fahrzeit bei Greedy, Fortsetzung-zuerst + verbleibender
-Arbeitsaufwand bei Koordiniert) - dieselbe Simulationslogik, drei verschiedene
-Dispatchregeln.
+(konstant bei FCFS, kürzeste Fahrzeit des aktuellen Legs bei Greedy, kürzester
+verbleibender Arbeitsaufwand über die gesamte Restroute bei Koordiniert) - dieselbe
+Simulationslogik, drei verschiedene Dispatchregeln.
 """
     )
 

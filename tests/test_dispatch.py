@@ -90,11 +90,12 @@ def test_single_transporter_scenario_still_feasible(dispatcher):
 
 def test_coordinated_reduces_transfer_wait_under_hub_bottleneck():
     """The core hook: with a single-transporter hub bottleneck and many
-    cross-zone orders, greedy/decentralized SPT dispatch lets short
-    same-aisle legs jump the queue ahead of hub transfers, while the
-    coordinated (most-work-remaining) dispatcher prioritizes orders that
-    still have a transfer ahead of them. Coordinated should not create
-    more total transfer waiting than greedy on the same instance."""
+    cross-zone orders, greedy/decentralized SPT dispatch judges legs only by
+    their own travel time and lets short same-aisle legs jump the queue
+    ahead of hub transfers, while the coordinated dispatcher (shortest
+    remaining work over an order's whole route) prioritizes orders closest
+    to finishing their journey. Coordinated should not create more total
+    transfer waiting than greedy on the same instance."""
     net, orders, routes, transporters_per_zone = build_scenario(
         n_aisles=3, hub_nodes=1, transporters_per_aisle=2, transporters_hub=1,
         n_orders=30, horizon_minutes=20.0, cross_zone_share=0.8, seed=7,
