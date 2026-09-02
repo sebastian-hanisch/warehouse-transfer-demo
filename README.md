@@ -11,8 +11,17 @@ nächsten Einsatzort fahren (**Repositionierung**), bevor er wieder Ladung aufne
 
 ## Worum geht's?
 
-Fachlich ein **Pickup-and-Delivery-Problem mit Transshipment (PDPT)** – ein etabliertes
-VRP-Sonderproblem, bei dem Ladung an definierten Umschlagpunkten das Fahrzeug wechseln darf.
+Fachlich auf zwei Ebenen zu verorten. Das Gesamtbild ist ein **Pickup-and-Delivery-Problem
+mit Transshipment (PDPT)** – ein etabliertes VRP-Sonderproblem, bei dem Ladung an
+definierten Umschlagpunkten das Fahrzeug wechseln darf. Aber: beim Hub-and-Spoke-Layout
+gibt es pro Auftrag nur eine gültige Zonenfolge (eigene Gasse, oder Gasse → Hub →
+Zielgasse) – Routing ist hier keine Entscheidung, sondern reine Konsequenz der Topologie.
+Was die vier Verfahren unten tatsächlich lösen, ist WANN und mit WELCHEM Transporter jedes
+bereits feststehende Leg bedient wird – strukturell kein Routing-, sondern ein **Scheduling
+mit parallelen Maschinen (Transportern je Zone) und sequenzabhängigen Rüstzeiten
+(Repositionierung)**, weshalb Koordiniert auf einer Scheduling-Regel (ATCS) statt einer
+Tourenplanungs-Heuristik aufbaut.
+
 Der Fokus der Demo: **lokal optimale Disposition je Zone erzeugt an Umschlagpunkten
 Wartezeit und schickt Transporter unnötig durchs Lager – beides pflanzt sich
 kaskadenartig fort** – und eine zonenübergreifend koordinierte Disposition vermeidet

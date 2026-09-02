@@ -2,13 +2,22 @@
 Lagerlogistik: Transport über mehrere Zonen mit Umschlagpunkten – interaktive Demo
 Sebastian Hanisch - Operations Research und Machine Learning
 
-Fachlich ein Pickup-and-Delivery-Problem mit Transshipment (PDPT): Ware bewegt sich
-durch mehrere Zonen (Regalgassen-Shuttles + zentraler Verteiler/Lift), zonengebundene
-Transporter dürfen ihre eigene Zone nicht verlassen, zonenübergreifende Aufträge
-müssen an einem Umschlagpunkt auf den nächsten Transporter umsteigen. Transporter
-werden einzeln mit Position geführt (nicht nur als Kapazitätszahl) - wer gerade
-abgeliefert hat, muss leer zum nächsten Einsatzort fahren (Repositionierung), genau
-wie ein echtes Shuttle/AGV.
+Fachlich auf zwei Ebenen zu verorten, nicht nur einer - das Gesamtbild ist ein
+Pickup-and-Delivery-Problem mit Transshipment (PDPT, eine VRP-Familie): Ware bewegt
+sich durch mehrere Zonen (Regalgassen-Shuttles + zentraler Verteiler/Lift),
+zonengebundene Transporter dürfen ihre eigene Zone nicht verlassen, zonenübergreifende
+Aufträge müssen an einem Umschlagpunkt auf den nächsten Transporter umsteigen. Aber:
+beim Hub-and-Spoke-Layout gibt es pro Auftrag nur EINE gültige Zonenfolge (Gasse -> Hub
+-> Zielgasse oder nur die eigene Gasse) - Routing ist hier keine Entscheidung, sondern
+reine Konsequenz der Topologie (`warehouse_routing.py`). Was tatsächlich entschieden
+wird, ist WANN und mit WELCHEM Transporter jedes (bereits feststehende) Leg bedient
+wird - strukturell kein Routing- mehr, sondern ein Scheduling-Problem: parallele
+Maschinen (Transporter je Zone) mit sequenzabhängigen Rüstzeiten (Repositionierung).
+Genau das lösen die vier Dispositionsverfahren unten, weshalb Koordiniert auf einer
+Scheduling-Regel (ATCS) statt einer VRP-Heuristik aufbaut. Transporter werden einzeln
+mit Position geführt (nicht nur als Kapazitätszahl) - wer gerade abgeliefert hat, muss
+leer zum nächsten Einsatzort fahren (Repositionierung), genau wie ein echtes
+Shuttle/AGV.
 
 Vier Dispositionsverfahren im Vergleich: Unoptimiert (FCFS), Dezentral je Zone
 (Greedy: lokales SPT je Leg, blind für Repositionierungskosten), Koordiniert (ATCS -
@@ -534,6 +543,18 @@ Ware, die zwischen Zonen muss, wird an einem **Umschlagpunkt** von einem Transpo
 nächsten übergeben. Fachlich ist das ein **Pickup-and-Delivery-Problem mit Transshipment
 (PDPT)** - ein etabliertes Sonderproblem der Tourenplanung (VRP), bei dem Ladung an
 definierten Punkten das Fahrzeug wechseln darf.
+
+**Aber Vorsicht bei der Einordnung:** PDPT beschreibt das große Bild - warum es
+Umschlagpunkte überhaupt gibt -, nicht das, was hier tatsächlich berechnet wird. Bei
+einem "echten" VRP wäre die Route selbst eine Entscheidung; hier gibt das
+Hub-and-Spoke-Layout jedem Auftrag genau eine gültige Zonenfolge vor (eigene Gasse,
+oder Gasse → Hub → Zielgasse) - keine Alternative, also nichts zu routen. Was übrig
+bleibt und was die vier Verfahren unten tatsächlich lösen, ist: WANN und mit WELCHEM
+Transporter jedes bereits feststehende Leg bedient wird. Das ist strukturell
+**Scheduling auf parallelen Maschinen mit sequenzabhängigen Rüstzeiten**
+(Transporter je Zone = Maschinen, Repositionierung = Rüstzeit) - ein anderes
+Problem als VRP, weshalb Koordiniert unten auf einer Scheduling-Regel (ATCS) statt
+einer Tourenplanungs-Heuristik aufbaut.
 
 **Lagerlayout:** Hub-and-Spoke - mehrere Gassen-Zonen hängen an einer zentralen
 Verteiler-Zone (schnellere Förderstrecke/Lift). Jede Gasse hat genau einen Umschlagpunkt zum
