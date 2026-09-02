@@ -351,47 +351,69 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
         )
 
     with tabs[3]:
-        st.markdown(
-            "Googles Open-Source-Solver OR-Tools (CP-SAT) plant nicht Schritt für Schritt wie die drei "
-            "Heuristiken oben, sondern sucht direkt nach dem bestmöglichen Gesamtplan - liefert bei genug "
-            "Zeit die nachweislich optimale Lösung, ist dafür aber deutlich rechenintensiver. Button-gesteuert "
-            "statt automatisch bei jeder Eingabe, damit die App nicht bei jeder Reglerbewegung neu rechnet."
-        )
-        time_limit = st.slider("Zeitlimit (s)", 1, MAX_ORTOOLS_TIME_LIMIT, DEFAULT_ORTOOLS_TIME_LIMIT, key="ortools_time_limit")
+        @st.fragment
+        def _render_ortools_tab():
+            st.markdown(
+                "Googles Open-Source-Solver OR-Tools (CP-SAT) plant nicht Schritt für Schritt wie die drei "
+                "Heuristiken oben, sondern sucht direkt nach dem bestmöglichen Gesamtplan - liefert bei genug "
+                "Zeit die nachweislich optimale Lösung, ist dafür aber deutlich rechenintensiver. Button-gesteuert "
+                "statt automatisch bei jeder Eingabe, damit die App nicht bei jeder Reglerbewegung neu rechnet."
+            )
+            time_limit = st.slider("Zeitlimit (s)", 1, MAX_ORTOOLS_TIME_LIMIT, DEFAULT_ORTOOLS_TIME_LIMIT, key="ortools_time_limit")
 
-        cooldown_active = False
-        last_run = st.session_state.get("ortools_last_run_at")
-        last_limit = st.session_state.get("ortools_last_time_limit", DEFAULT_ORTOOLS_TIME_LIMIT)
-        if last_run is not None:
-            elapsed = time.time() - last_run
-            cooldown_needed = last_limit + ORTOOLS_COOLDOWN_BUFFER_SECONDS
-            cooldown_active = elapsed < cooldown_needed
+            cooldown_active = False
+            last_run = st.session_state.get("ortools_last_run_at")
+            last_limit = st.session_state.get("ortools_last_time_limit", DEFAULT_ORTOOLS_TIME_LIMIT)
+            if last_run is not None:
+                elapsed = time.time() - last_run
+                cooldown_needed = last_limit + ORTOOLS_COOLDOWN_BUFFER_SECONDS
+                cooldown_active = elapsed < cooldown_needed
 
-        solve_clicked = st.button("Mit OR-Tools lösen", disabled=cooldown_active)
-        if cooldown_active:
-            st.caption(f"Kurze Abkühlpause aktiv - noch {cooldown_needed - elapsed:.0f}s.")
+            solve_clicked = st.button("Mit OR-Tools lösen", disabled=cooldown_active)
+            if cooldown_active:
+                remaining = cooldown_needed - elapsed
+                st.caption(f"Kurze Abkühlpause aktiv - noch {remaining:.0f}s.")
+                # A plain st.rerun() only recomputes this on the NEXT user
+                # interaction - without it, the countdown sits frozen at
+                # whatever it showed right after solving, and the disabled
+                # button stays disabled-looking indefinitely. scope="fragment"
+                # reruns only this fragment (not the whole page/other tabs),
+                # so the countdown ticks live without disturbing anything else.
+                time.sleep(min(remaining, 1.0))
+                st.rerun(scope="fragment")
 
-        if solve_clicked:
-            with st.spinner("OR-Tools löst..."):
-                schedule, status = solve_ortools(network, routes, orders, transporters_per_zone, handover, time_limit, horizon)
-            st.session_state["ortools_last_run_at"] = time.time()
-            st.session_state["ortools_last_time_limit"] = time_limit
-            st.session_state["ortools_schedule"] = schedule
-            st.session_state["ortools_status"] = status
-            st.session_state["ortools_scenario_key"] = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover)
+            if solve_clicked:
+                with st.spinner("OR-Tools löst..."):
+                    schedule, status = solve_ortools(network, routes, orders, transporters_per_zone, handover, time_limit, horizon)
+                st.session_state["ortools_last_run_at"] = time.time()
+                st.session_state["ortools_last_time_limit"] = time_limit
+                st.session_state["ortools_schedule"] = schedule
+                st.session_state["ortools_status"] = status
+                st.session_state["ortools_scenario_key"] = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover)
+                # cooldown_active above was computed BEFORE this solve (using
+                # the previous run's timestamp), so this render would still
+                # show the button as enabled and no countdown - immediately
+                # rerun the fragment so the cooldown just started actually
+                # takes effect instead of only becoming visible on some
+                # unrelated later interaction (the real bug: a user could
+                # otherwise click solve again immediately, with no cooldown
+                # ever having visibly kicked in).
+                st.rerun(scope="fragment")
 
-        current_key = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover)
-        stale = st.session_state.get("ortools_scenario_key") != current_key
-        ortools_schedule = st.session_state.get("ortools_schedule")
+            current_key = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover)
+            stale = st.session_state.get("ortools_scenario_key") != current_key
+            ortools_schedule = st.session_state.get("ortools_schedule")
 
-        if ortools_schedule is not None and not stale:
-            st.caption(f"Status: {status_label(st.session_state['ortools_status'])}")
-            ortools_eval = evaluate_schedule(ortools_schedule, routes, orders, transporters_per_zone, handover)
-            render_method_panel("ortools", ortools_schedule, ortools_eval, orders_by_id, network, transporters_per_zone)
-        elif ortools_schedule is not None and stale:
-            st.info("Eingaben haben sich geändert - bitte erneut lösen.")
-        else:
-            st.info("Noch nicht gelöst.")
+            if ortools_schedule is not None and not stale:
+                st.caption(f"Status: {status_label(st.session_state['ortools_status'])}")
+                ortools_eval = evaluate_schedule(ortools_schedule, routes, orders, transporters_per_zone, handover)
+                render_method_panel("ortools", ortools_schedule, ortools_eval, orders_by_id, network, transporters_per_zone)
+            elif ortools_schedule is not None and stale:
+                st.info("Eingaben haben sich geändert - bitte erneut lösen.")
+            else:
+                st.info("Noch nicht gelöst.")
+
+        _render_ortools_tab()
 
     with tabs[4]:
         compare_evals = dict(evaluations)
