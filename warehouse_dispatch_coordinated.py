@@ -2,6 +2,17 @@
 weighted look-ahead at how much of the order's journey is still left
 afterwards - a "mostly local, slightly global" priority rule.
 
+DESIGN GOAL (explicit, so future tuning doesn't drift from it):
+Gesamtdurchlaufzeit is the primary objective - FUTURE_WORK_WEIGHT keeps SPT
+(the term proven optimal for minimizing total completion time on a single
+resource) dominant for exactly that reason. Umstiegs-Wartezeit reduction is
+secondary: real and consistently achieved (see `_future_work`'s effect and
+`test_coordinated_reduces_transfer_wait_under_hub_bottleneck`), but not
+optimized directly, and never allowed to regress the primary objective in
+aggregate (`test_coordinated_does_not_lose_on_lead_time_in_aggregate`).
+Both are covered by their own aggregate regression test precisely because
+neither is a single hard-coded number to assert against.
+
 Pure SPT (shortest processing time first) is the classic, provably optimal
 rule for minimizing the sum of completion times on a SINGLE resource.
 Greedy/decentralized dispatch already applies that idea, but only within
