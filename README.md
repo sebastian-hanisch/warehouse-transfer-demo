@@ -1,5 +1,7 @@
 # Lagerlogistik: Transport ueber mehrere Zonen mit Umschlagpunkten
 
+**[→ Demo live ausprobieren](https://sebastianhanisch-warehouse-transfer-demo.streamlit.app/)**
+
 Interaktive Demo zu einem automatisierten Hochregallager: Ware bewegt sich durch mehrere
 **Zonen** (Regalgassen-Shuttles + ein zentraler Verteiler/Lift). Jeder Transporter bleibt in
 seiner eigenen Zone - Auftraege, die zonenuebergreifend muessen, "steigen" an einem
