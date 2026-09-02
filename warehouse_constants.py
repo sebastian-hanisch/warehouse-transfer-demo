@@ -52,9 +52,31 @@ MIN_SEED = 0
 MAX_SEED = 9999
 
 # Due dates (derived, not user-facing sliders): due_time = release_time +
-# DUE_DATE_FACTOR * theoretical minimum route time + DUE_DATE_BUFFER_MINUTES
+# factor * theoretical minimum route time + DUE_DATE_BUFFER_MINUTES. Express
+# orders get a tighter factor - the same generous buffer, but less slack
+# multiplied onto the minimum route time.
 DUE_DATE_FACTOR = 3.0
+DUE_DATE_FACTOR_EXPRESS = 1.5
 DUE_DATE_BUFFER_MINUTES = 5.0
+
+# Share of orders flagged as express (tighter due date). Only the coordinated
+# heuristic and OR-Tools actually use the flag as a dispatch signal - baseline
+# (FCFS) and greedy (local SPT) stay blind to it by design, the same way real
+# naive/local dispatch often ignores stated priorities.
+DEFAULT_EXPRESS_SHARE = 0.2
+MIN_EXPRESS_SHARE = 0.0
+MAX_EXPRESS_SHARE = 1.0
+
+# Coordinated: multiplies an express order's priority score down (lower score
+# = served first in this codebase's convention), so it consistently jumps
+# ahead of similar-priority non-express legs without discarding the
+# underlying SPT + remaining-work logic.
+EXPRESS_PRIORITY_FACTOR = 0.5
+
+# OR-Tools: weight on an express order's completion time in the objective
+# (weighted sum of completion times, a classic scheduling formulation) -
+# higher weight makes finishing it early matter proportionally more.
+EXPRESS_WEIGHT = 3
 
 # OR-Tools
 DEFAULT_ORTOOLS_TIME_LIMIT = 3

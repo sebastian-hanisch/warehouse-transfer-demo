@@ -10,11 +10,14 @@ from warehouse_visualization import build_gantt_figure
 
 
 def render_method_panel(method, schedule, evaluation_result, orders_by_id, network, transporters_per_zone, extra_caption=None):
-    cols = st.columns(4)
+    has_express = any(r.is_express for r in evaluation_result.orders)
+    cols = st.columns(5 if has_express else 4)
     cols[0].metric("Gesamtdurchlaufzeit", f"{evaluation_result.total_lead_time:.0f} min")
     cols[1].metric("Umstiegs-Wartezeit gesamt", f"{evaluation_result.total_transfer_wait:.0f} min")
     cols[2].metric("Pünktlichkeit", f"{evaluation_result.on_time_rate * 100:.0f}%")
     cols[3].metric("Letzte Auslieferung", f"{evaluation_result.makespan:.0f} min")
+    if has_express:
+        cols[4].metric("Pünktlichkeit Express", f"{evaluation_result.on_time_rate_express * 100:.0f}%")
 
     if extra_caption:
         st.caption(extra_caption)
@@ -28,6 +31,7 @@ def render_method_panel(method, schedule, evaluation_result, orders_by_id, netwo
             rows.append(
                 {
                     "Auftrag": r.order_id,
+                    "Express": "🚀" if r.is_express else "",
                     "Von": order.origin_node,
                     "Nach": order.destination_node,
                     "Start": round(r.release_time, 1),

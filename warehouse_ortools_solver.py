@@ -8,13 +8,16 @@ no per-transporter assignment variable is needed, only the shared-resource
 capacity. Consecutive legs of the same order are chained with a precedence
 constraint (next leg cannot start before the previous one ends plus the
 handover time) - this is the transfer-synchronization constraint. Objective:
-minimize total completion time (sum of each order's final-leg end time).
+minimize total completion time, weighted so express orders (order.is_express)
+count EXPRESS_WEIGHT times as much - a classic weighted-completion-time
+formulation, the exact objective analogue of coordinated's EXPRESS_PRIORITY_FACTOR.
 """
 
 import math
 
 from ortools.sat.python import cp_model
 
+from warehouse_constants import EXPRESS_WEIGHT
 from warehouse_dispatch_core import LegAssignment, Schedule, label_transporters
 
 SCALE = 100
@@ -52,13 +55,14 @@ def solve_ortools(routes, orders, transporters_per_zone, handover_minutes, time_
         capacity = transporters_per_zone[zone_id]
         model.AddCumulative(intervals, [1] * len(intervals), capacity)
 
-    completions = []
+    weighted_completions = []
     for order in orders:
         route = routes[order.order_id]
         last_index = len(route.legs) - 1
         start, duration = starts[(order.order_id, last_index)]
-        completions.append(start + duration)
-    model.Minimize(sum(completions))
+        weight = EXPRESS_WEIGHT if order.is_express else 1
+        weighted_completions.append(weight * (start + duration))
+    model.Minimize(sum(weighted_completions))
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit_seconds

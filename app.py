@@ -19,6 +19,12 @@ Ressource nachweislich optimal, das komplett zu verwerfen kostet lokal mehr, als
 globale Sicht gewinnt. Die aktuelle, leicht gewichtete Fassung schlägt Greedy
 zuverlässig bei beiden Kennzahlen.
 
+Ein Anteil der Aufträge kann als Express markiert werden (engere Frist). Nur Koordiniert
+(Prioritäts-Faktor 0,5) und OR-Tools (Gewicht 3 im Zielwert, klassische
+Weighted-Completion-Time-Formulierung) nutzen die Markierung aktiv - Unoptimiert und
+Greedy ignorieren sie bewusst, um zu zeigen, dass ein rein lokales/unkoordiniertes
+System gesetzte Prioritäten in der Praxis oft schlicht nicht respektiert.
+
 Selbe Struktur wie bei den anderen Demos in diesem Workspace: Ergebnis zuerst,
 vollständiger Methodenvergleich sekundär im Expander, dazu "Wie funktioniert diese
 Demo?" und "Mathematische Formulierung" als eigene Expander.
@@ -87,16 +93,16 @@ PRESET_BUTTONS = {
 
 
 @st.cache_data
-def _build_scenario(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, seed):
+def _build_scenario(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed):
     network = build_network(n_aisles, nodes_per_aisle, hub_nodes, DEFAULT_AISLE_SPEED, DEFAULT_HUB_SPEED)
-    orders = generate_orders(network, n_orders, horizon, cross_zone, int(seed))
+    orders = generate_orders(network, n_orders, horizon, cross_zone, int(seed), express)
     routes = route_orders(network, orders)
     return network, orders, routes
 
 
 @st.cache_data
-def _run_own_methods(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, seed, trans_aisle, trans_hub, handover):
-    network, orders, routes = _build_scenario(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, seed)
+def _run_own_methods(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover):
+    network, orders, routes = _build_scenario(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed)
     tpz = {aisle_id: trans_aisle for aisle_id in network.aisle_ids}
     tpz[network.hub_id] = trans_hub
 
@@ -199,6 +205,13 @@ with st.sidebar:
              "- nur diese durchlaufen überhaupt einen Umschlagpunkt. Bei 0 gibt es keine "
              "Umstiege und alle vier Verfahren liefern dasselbe Ergebnis.",
     )
+    express = st.slider(
+        "Anteil Express-Aufträge", *bounds("express_slider"), key="express_slider",
+        help="Anteil der Aufträge mit engerer Frist. Nur Koordiniert und OR-Tools nutzen "
+             "das als Dispositionssignal und ziehen Express-Aufträge konsequent vor - "
+             "Unoptimiert und Dezentral/Greedy ignorieren es bewusst, genau wie ein rein "
+             "lokales System in der Praxis oft an gesetzten Prioritäten vorbeidisponiert.",
+    )
     seed_lo, seed_hi = bounds("seed_input")
     seed = st.number_input("Zufalls-Seed", min_value=seed_lo, max_value=seed_hi, step=1, key="seed_input")
 
@@ -213,17 +226,17 @@ sync_query_params(
         "hub_nodes_slider": hub_nodes, "trans_aisle_slider": trans_aisle,
         "trans_hub_slider": trans_hub, "handover_slider": handover,
         "n_orders_slider": n_orders, "horizon_slider": horizon,
-        "cross_zone_slider": cross_zone, "seed_input": int(seed),
+        "cross_zone_slider": cross_zone, "express_slider": express, "seed_input": int(seed),
     }
 )
 
-network, orders, routes = _build_scenario(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, seed)
+network, orders, routes = _build_scenario(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed)
 transporters_per_zone = {aisle_id: trans_aisle for aisle_id in network.aisle_ids}
 transporters_per_zone[network.hub_id] = trans_hub
 orders_by_id = {o.order_id: o for o in orders}
 
 schedules, evaluations = _run_own_methods(
-    n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, seed, trans_aisle, trans_hub, handover
+    n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover
 )
 
 # ---- Primary view: result first ----
@@ -342,9 +355,9 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
             st.session_state["ortools_last_time_limit"] = time_limit
             st.session_state["ortools_schedule"] = schedule
             st.session_state["ortools_status"] = status
-            st.session_state["ortools_scenario_key"] = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, seed, trans_aisle, trans_hub, handover)
+            st.session_state["ortools_scenario_key"] = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover)
 
-        current_key = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, seed, trans_aisle, trans_hub, handover)
+        current_key = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover)
         stale = st.session_state.get("ortools_scenario_key") != current_key
         ortools_schedule = st.session_state.get("ortools_schedule")
 
@@ -360,26 +373,34 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
     with tabs[4]:
         compare_evals = dict(evaluations)
         ortools_schedule = st.session_state.get("ortools_schedule")
-        current_key = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, seed, trans_aisle, trans_hub, handover)
+        current_key = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover)
         if ortools_schedule is not None and st.session_state.get("ortools_scenario_key") == current_key:
             compare_evals["ortools"] = evaluate_schedule(ortools_schedule, routes, orders, transporters_per_zone, handover)
 
         st.plotly_chart(build_kpi_comparison_figure(compare_evals), width='stretch', key="kpi_comparison")
         st.plotly_chart(build_transfer_wait_figure(compare_evals), width='stretch', key="transfer_wait_compare")
 
+        has_express = any(o.is_express for o in orders)
         rows = []
         for method, result in compare_evals.items():
-            rows.append(
-                {
-                    "Verfahren": METHOD_LABELS.get(method, method),
-                    "Gesamtdurchlaufzeit (min)": round(result.total_lead_time, 1),
-                    "Umstiegs-Wartezeit (min)": round(result.total_transfer_wait, 1),
-                    "Pünktlichkeit": f"{result.on_time_rate * 100:.0f}%",
-                    "Letzte Auslieferung (min)": round(result.makespan, 1),
-                }
-            )
+            row = {
+                "Verfahren": METHOD_LABELS.get(method, method),
+                "Gesamtdurchlaufzeit (min)": round(result.total_lead_time, 1),
+                "Umstiegs-Wartezeit (min)": round(result.total_transfer_wait, 1),
+                "Pünktlichkeit": f"{result.on_time_rate * 100:.0f}%",
+                "Letzte Auslieferung (min)": round(result.makespan, 1),
+            }
+            if has_express:
+                row["Pünktlichkeit Express"] = f"{result.on_time_rate_express * 100:.0f}%"
+            rows.append(row)
         st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
         st.caption("Alle Verfahren lösen dasselbe Szenario mit derselben Kennzahlen-Berechnung - fair vergleichbar.")
+        if has_express:
+            st.caption(
+                "🚀 Express-Aufträge sind in der Auftragstabelle jedes Verfahrens markiert. Nur Koordiniert "
+                "und OR-Tools nutzen die Markierung als Dispositionssignal - Unoptimiert und Dezentral/Greedy "
+                "ignorieren sie bewusst."
+            )
 
     with tabs[5]:
         method_choice = st.selectbox(
@@ -419,6 +440,15 @@ sichtbar wird.
 bewusst zonenübergreifend, damit Umstiege im Standardfall tatsächlich auftreten - sonst zeigt
 der Kernvergleich unten keinen Unterschied (siehe Preset "Kleines Lager, wenig Verkehr").
 
+**Express-Aufträge (🚀):** Ein einstellbarer Anteil der Aufträge bekommt eine engere Frist
+(Faktor 1,5 statt 3,0 auf die theoretische Mindestlaufzeit). Interessant ist nicht die
+Frist selbst, sondern wer sie überhaupt beachtet: Unoptimiert und Dezentral/Greedy ignorieren
+die Markierung bewusst - beide bleiben bei ihrer jeweiligen Logik (Ankunftsreihenfolge bzw.
+kürzeste Fahrzeit), egal ob ein Auftrag als dringend markiert ist oder nicht. Das ist keine
+Vereinfachung, sondern der Punkt: ein rein lokales oder unkoordiniertes System disponiert in
+der Praxis oft tatsächlich an gesetzten Prioritäten vorbei, weil es sie schlicht nicht als
+Signal nutzt. Koordiniert und OR-Tools tun das dagegen aktiv (Details unten je Verfahren).
+
 **Vier Dispositionsverfahren, alle mit derselben Kennzahlen-Berechnung ausgewertet:**
 - **Unoptimiert (FCFS):** keine Prioritätslogik, wer zuerst bereit ist, wird zuerst bedient.
 - **Dezentral/Greedy:** jede Zone dispatcht lokal nach kürzester Fahrzeit des aktuellen Legs
@@ -432,19 +462,26 @@ der Kernvergleich unten keinen Unterschied (siehe Preset "Kleines Lager, wenig V
   Zufallsszenarien öfter als sie gegen Greedy bei der Gesamtdurchlaufzeit gewann - SPTs
   Optimalität für eine einzelne Ressource ist real, sie ganz aufzugeben kostet lokal mehr,
   als die globale Sicht einbringt. Die leicht gewichtete Fassung gewinnt zuverlässig bei
-  beiden Kennzahlen.
+  beiden Kennzahlen. Express-Aufträge bekommen zusätzlich einen Prioritäts-Bonus (die
+  Priorität wird mit 0,5 multipliziert, niedriger = früher dran) - dieselbe Logik, nur
+  konsequent nach vorn gezogen.
 - **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer, `AddCumulative` je Zone
   begrenzt gleichzeitig aktive Legs auf die Anzahl Transporter, eine Präzedenzbedingung
-  erzwingt die Umstiegssynchronisation. Ziel: minimale Gesamtdurchlaufzeit. Button-gesteuert
-  mit Zeitlimit und Cooldown, da rechenintensiver als die eigenen Heuristiken.
+  erzwingt die Umstiegssynchronisation. Ziel: minimale **gewichtete** Gesamtdurchlaufzeit -
+  Express-Aufträge zählen 3-fach im Zielwert (klassische Weighted-Completion-Time-
+  Formulierung), das genaue Analogon zu Koordiniert's Prioritäts-Bonus, nur als echtes
+  Optimierungsziel statt als Heuristik-Regel. Button-gesteuert mit Zeitlimit und Cooldown,
+  da rechenintensiver als die eigenen Heuristiken.
 
-**Kern-Kennzahl:** Nicht nur die Gesamtdurchlaufzeit, sondern ausdrücklich die **kumulierte
+**Kern-Kennzahlen:** Nicht nur die Gesamtdurchlaufzeit, sondern ausdrücklich die **kumulierte
 Umstiegs-Wartezeit** - genau die Größe, die bei rein lokaler Disposition unbemerkt wächst,
-während die Gesamtdurchlaufzeit oft ähnlich aussieht.
+während die Gesamtdurchlaufzeit oft ähnlich aussieht - sowie, wenn Express-Aufträge aktiv
+sind, deren **Pünktlichkeit** separat von der Gesamtpünktlichkeit.
 
 **In einem echten Lager** kämen weitere Nebenbedingungen dazu (Batterie-/Ladezyklen der
-Shuttles, Prioritätsklassen je Auftrag, mehrstöckige Hub-Topologien) - das Grundprinzip aus
-Zonenbindung, Umschlagpunkten und den vier Dispositionsverfahren bleibt aber dasselbe.
+Shuttles, mehrstöckige Hub-Topologien, tatsächliche Kollisionsvermeidung innerhalb einer
+Gasse) - das Grundprinzip aus Zonenbindung, Umschlagpunkten und den vier
+Dispositionsverfahren bleibt aber dasselbe.
 """
     )
 
@@ -459,12 +496,13 @@ mehr Legs gleichzeitig bedienen, als sie Transporter hat. Formal:
 
 Gegeben ein Auftrag $o$ mit einer Folge von Legs $\ell \in \{1, \ldots, L_o\}$ (Zone,
 Ein-/Ausstiegsknoten, feste Fahrzeit $d_{o,\ell}$), eine Release-Zeit $r_o$, eine feste
-Umstiegszeit $h$ und je Zone $z$ eine Transporteranzahl $c_z$. Gesucht sind Startzeiten
-$s_{o,\ell} \geq 0$ für jeden Leg, die den gesamten Auftragsbestand bedienen und die
-Gesamtdurchlaufzeit minimieren:
+Umstiegszeit $h$, je Zone $z$ eine Transporteranzahl $c_z$, und ein Gewicht $w_o$ (3 für
+Express-Aufträge, sonst 1). Gesucht sind Startzeiten $s_{o,\ell} \geq 0$ für jeden Leg, die
+den gesamten Auftragsbestand bedienen und die **gewichtete** Gesamtdurchlaufzeit
+minimieren:
 """
     )
-    st.latex(r"\min \; \sum_{o} \Big( s_{o,L_o} + d_{o,L_o} - r_o \Big)")
+    st.latex(r"\min \; \sum_{o} w_o \Big( s_{o,L_o} + d_{o,L_o} - r_o \Big)")
     st.latex(r"s_{o,1} \geq r_o \qquad \forall o")
     st.latex(r"s_{o,\ell+1} \geq s_{o,\ell} + d_{o,\ell} + h \qquad \forall o,\, \ell < L_o \quad \text{(Umstiegssynchronisation)}")
     st.latex(
@@ -487,14 +525,20 @@ Zeitpunkt. Die drei Verfahren unterscheiden sich ausschließlich in der Priorit�
 konstant bei FCFS, kürzeste Fahrzeit des aktuellen Legs bei Greedy, und bei Koordiniert
 """
     )
-    st.latex(r"\text{Priorität}(o,\ell) = d_{o,\ell} + 0{,}1 \cdot \sum_{k > \ell} \big(d_{o,k} + h\big)")
+    st.latex(
+        r"\text{Priorität}(o,\ell) = p_o \cdot \Big( d_{o,\ell} + 0{,}1 \cdot \sum_{k > \ell} \big(d_{o,k} + h\big) \Big),"
+        r"\qquad p_o = 0{,}5 \text{ falls } o \text{ Express, sonst } 1"
+    )
     st.markdown(
         r"""
 Dieselbe kürzeste-Fahrzeit-Logik wie Greedy ($d_{o,\ell}$), plus ein kleines Gewicht
-(10 %) auf die gesamte noch verbleibende Reise nach dem aktuellen Leg. Eine erste
-Fassung ohne den $d_{o,\ell}$-Term (reine Sortierung nach Restroute) verlor im Test
-über hunderte Zufallsszenarien öfter als sie gegen Greedy bei der Gesamtdurchlaufzeit
-gewann - dieselbe Simulationslogik, aber drei verschiedene Dispatchregeln.
+(10 %) auf die gesamte noch verbleibende Reise nach dem aktuellen Leg, zusätzlich mit
+$p_o$ skaliert - niedrigerer Wert wird zuerst bedient, ein Express-Auftrag wird also
+konsequent vorgezogen. Eine erste Fassung ohne den $d_{o,\ell}$-Term (reine Sortierung
+nach Restroute) verlor im Test über hunderte Zufallsszenarien öfter als sie gegen Greedy
+bei der Gesamtdurchlaufzeit gewann - dieselbe Simulationslogik, aber drei verschiedene
+Dispatchregeln, deren einziger Unterschied diese eine Formel ist (FCFS: Priorität
+konstant 0; Greedy: $p_o \equiv 1$ und kein Restroute-Term).
 """
     )
 

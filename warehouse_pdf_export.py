@@ -24,11 +24,14 @@ def generate_dispatch_pdf(method, evaluation_result, orders_by_id):
     pdf.cell(0, 8, f"Durchschn. Durchlaufzeit: {evaluation_result.avg_lead_time:.1f} min", ln=True)
     pdf.cell(0, 8, f"Umstiegs-Wartezeit gesamt: {evaluation_result.total_transfer_wait:.1f} min", ln=True)
     pdf.cell(0, 8, f"Pünktlichkeit: {evaluation_result.on_time_rate * 100:.0f}%", ln=True)
+    has_express = any(r.is_express for r in evaluation_result.orders)
+    if has_express:
+        pdf.cell(0, 8, f"Pünktlichkeit Express: {evaluation_result.on_time_rate_express * 100:.0f}%", ln=True)
     pdf.ln(4)
 
     pdf.set_font("Helvetica", "B", 9)
-    headers = ["Auftrag", "Von -> Nach", "Start", "Ankunft", "Laufzeit", "Umstiege", "Wartezeit", "Termin"]
-    widths = [16, 55, 18, 20, 20, 18, 22, 20]
+    headers = ["Auftrag", "Exp.", "Von -> Nach", "Start", "Ankunft", "Laufzeit", "Umstiege", "Wartezeit", "Termin"]
+    widths = [14, 12, 47, 18, 20, 18, 16, 20, 18]
     for h, w in zip(headers, widths):
         pdf.cell(w, 7, h, border=1)
     pdf.ln()
@@ -39,6 +42,7 @@ def generate_dispatch_pdf(method, evaluation_result, orders_by_id):
         route_text = f"{order.origin_node} -> {order.destination_node}"
         row = [
             str(r.order_id),
+            "*" if r.is_express else "",
             route_text,
             f"{r.release_time:.1f}",
             f"{r.completion_time:.1f}",

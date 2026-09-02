@@ -31,8 +31,17 @@ shorter current leg, without discarding SPT's core benefit. Swept over the
 same hundreds of scenarios, this reliably ties-or-beats greedy on BOTH
 Gesamtdurchlaufzeit and Umstiegs-Wartezeit - in the two scenarios shown by
 default in the app it lands exactly on the OR-Tools optimum.
+
+Express orders (order.is_express) get their priority score scaled down by
+EXPRESS_PRIORITY_FACTOR, consistently moving them ahead of similar-priority
+non-express legs while leaving the SPT + future-work ordering intact within
+each group. Baseline and greedy deliberately do NOT look at is_express at
+all - the point of the comparison is that a naive/local dispatcher ignores
+stated priorities even when they exist, the same complaint real warehouse
+operators have about purely FCFS or purely local systems.
 """
 
+from warehouse_constants import EXPRESS_PRIORITY_FACTOR
 from warehouse_dispatch_core import simulate_dispatch
 
 # Weight on the order's remaining journey AFTER the current leg, relative to
@@ -56,6 +65,7 @@ def dispatch_coordinated(routes, orders, transporters_per_zone, handover_minutes
     def priority(order, route, leg_index, ready_time):
         current_leg = route.legs[leg_index].travel_time
         future = _future_work(route, leg_index, handover_minutes)
-        return current_leg + FUTURE_WORK_WEIGHT * future
+        score = current_leg + FUTURE_WORK_WEIGHT * future
+        return score * EXPRESS_PRIORITY_FACTOR if order.is_express else score
 
     return simulate_dispatch(routes, orders, transporters_per_zone, handover_minutes, priority, "coordinated")

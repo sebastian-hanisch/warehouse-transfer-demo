@@ -17,6 +17,7 @@ import streamlit as st
 
 from warehouse_constants import (
     DEFAULT_CROSS_ZONE_SHARE,
+    DEFAULT_EXPRESS_SHARE,
     DEFAULT_HANDOVER_MINUTES,
     DEFAULT_HORIZON_MINUTES,
     DEFAULT_HUB_NODES,
@@ -27,6 +28,7 @@ from warehouse_constants import (
     DEFAULT_TRANSPORTERS_HUB,
     DEFAULT_TRANSPORTERS_PER_AISLE,
     MAX_CROSS_ZONE_SHARE,
+    MAX_EXPRESS_SHARE,
     MAX_HANDOVER_MINUTES,
     MAX_HORIZON_MINUTES,
     MAX_HUB_NODES,
@@ -37,6 +39,7 @@ from warehouse_constants import (
     MAX_TRANSPORTERS_HUB,
     MAX_TRANSPORTERS_PER_AISLE,
     MIN_CROSS_ZONE_SHARE,
+    MIN_EXPRESS_SHARE,
     MIN_HANDOVER_MINUTES,
     MIN_HORIZON_MINUTES,
     MIN_HUB_NODES,
@@ -68,31 +71,37 @@ SETTING_SPECS = {
     "n_orders_slider": SettingSpec("orders", int, DEFAULT_N_ORDERS, MIN_N_ORDERS, MAX_N_ORDERS),
     "horizon_slider": SettingSpec("horizon", float, DEFAULT_HORIZON_MINUTES, MIN_HORIZON_MINUTES, MAX_HORIZON_MINUTES),
     "cross_zone_slider": SettingSpec("cross", float, DEFAULT_CROSS_ZONE_SHARE, MIN_CROSS_ZONE_SHARE, MAX_CROSS_ZONE_SHARE),
+    "express_slider": SettingSpec("express", float, DEFAULT_EXPRESS_SHARE, MIN_EXPRESS_SHARE, MAX_EXPRESS_SHARE),
     "seed_input": SettingSpec("seed", int, DEFAULT_SEED, MIN_SEED, MAX_SEED),
 }
 
 PRESET_KEYS = [
     "n_aisles_slider", "nodes_per_aisle_slider", "hub_nodes_slider", "trans_aisle_slider",
     "trans_hub_slider", "handover_slider", "n_orders_slider", "horizon_slider",
-    "cross_zone_slider", "seed_input",
+    "cross_zone_slider", "express_slider", "seed_input",
 ]
 
 # Curated, checked scenarios (not random) - "Stoßzeit" is tuned so the
 # greedy-vs-koordiniert gap in Umstiegs-Wartezeit is clearly visible, the
 # same way shift_demo's integrality-gap preset is a checked example rather
-# than a lucky random draw.
+# than a lucky random draw. express=0.0 in all three: express orders are
+# drawn from an independent RNG stream (see warehouse_demand.py) and don't
+# disturb these already-tuned scenarios' non-express numbers even at a
+# nonzero share, but keeping it at 0 here keeps each preset's story to a
+# single axis - the default scenario (not a preset) is where express
+# priority is shown, via DEFAULT_EXPRESS_SHARE.
 PRESETS = {
     "Kleines Lager, wenig Verkehr": dict(
         n_aisles=2, nodes_per_aisle=4, hub_nodes=2, trans_aisle=1, trans_hub=1,
-        handover=1.0, n_orders=8, horizon=30.0, cross=0.5, seed=2,
+        handover=1.0, n_orders=8, horizon=30.0, cross=0.5, express=0.0, seed=2,
     ),
     "Stoßzeit mit Engpass am Umschlagpunkt": dict(
         n_aisles=3, nodes_per_aisle=5, hub_nodes=1, trans_aisle=2, trans_hub=1,
-        handover=1.0, n_orders=30, horizon=20.0, cross=0.8, seed=7,
+        handover=1.0, n_orders=30, horizon=20.0, cross=0.8, express=0.0, seed=7,
     ),
     "Großes Lager": dict(
         n_aisles=4, nodes_per_aisle=6, hub_nodes=4, trans_aisle=2, trans_hub=3,
-        handover=1.0, n_orders=40, horizon=90.0, cross=0.6, seed=99,
+        handover=1.0, n_orders=40, horizon=90.0, cross=0.6, express=0.0, seed=99,
     ),
 }
 
@@ -113,6 +122,7 @@ def apply_preset(name):
     st.session_state["n_orders_slider"] = values["n_orders"]
     st.session_state["horizon_slider"] = values["horizon"]
     st.session_state["cross_zone_slider"] = values["cross"]
+    st.session_state["express_slider"] = values["express"]
     st.session_state["seed_input"] = values["seed"]
 
 

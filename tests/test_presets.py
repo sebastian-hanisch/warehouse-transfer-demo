@@ -39,7 +39,7 @@ def test_permalink_clamps_out_of_range_values(monkeypatch):
 def test_presets_have_all_required_fields():
     required = {
         "n_aisles", "nodes_per_aisle", "hub_nodes", "trans_aisle", "trans_hub",
-        "handover", "n_orders", "horizon", "cross", "seed",
+        "handover", "n_orders", "horizon", "cross", "express", "seed",
     }
     for name, values in PRESETS.items():
         assert required <= set(values.keys()), name
@@ -51,7 +51,7 @@ def test_presets_within_setting_spec_bounds():
         "hub_nodes": "hub_nodes_slider", "trans_aisle": "trans_aisle_slider",
         "trans_hub": "trans_hub_slider", "handover": "handover_slider",
         "n_orders": "n_orders_slider", "horizon": "horizon_slider",
-        "cross": "cross_zone_slider", "seed": "seed_input",
+        "cross": "cross_zone_slider", "express": "express_slider", "seed": "seed_input",
     }
     for name, values in PRESETS.items():
         for field, state_key in field_to_state_key.items():

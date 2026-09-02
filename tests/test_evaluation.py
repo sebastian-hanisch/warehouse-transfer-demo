@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from warehouse_constants import DUE_DATE_BUFFER_MINUTES, DUE_DATE_FACTOR
+from warehouse_constants import DUE_DATE_BUFFER_MINUTES, DUE_DATE_FACTOR, DUE_DATE_FACTOR_EXPRESS
 from warehouse_dispatch_core import LegAssignment, Schedule
 from warehouse_demand import Order
 from warehouse_evaluation import evaluate_schedule
@@ -85,3 +85,68 @@ def test_no_orders_returns_neutral_defaults():
     assert result.avg_lead_time == 0.0
     assert result.on_time_rate == 1.0
     assert result.makespan == 0.0
+
+
+def test_express_orders_get_tighter_due_date():
+    # Same route for both, one flagged express - only the due-date factor
+    # should differ; DUE_DATE_FACTOR_EXPRESS < DUE_DATE_FACTOR by design.
+    routes = {
+        0: Route(order_id=0, legs=[Leg("aisle_0", "n1", "n2", 3.0)]),
+        1: Route(order_id=1, legs=[Leg("aisle_0", "n1", "n2", 3.0)]),
+    }
+    orders = [
+        Order(0, "n1", "aisle_0", "n2", "aisle_0", release_time=0.0, is_express=False),
+        Order(1, "n1", "aisle_0", "n2", "aisle_0", release_time=0.0, is_express=True),
+    ]
+    assignments = [
+        LegAssignment(order_id=0, leg_index=0, zone_id="aisle_0", entry_node="n1", exit_node="n2",
+                      start=0.0, end=3.0, ready_time=0.0, transporter_id="aisle_0#0"),
+        LegAssignment(order_id=1, leg_index=0, zone_id="aisle_0", entry_node="n1", exit_node="n2",
+                      start=0.0, end=3.0, ready_time=0.0, transporter_id="aisle_0#1"),
+    ]
+    schedule = Schedule(method="test", assignments=assignments)
+    result = evaluate_schedule(schedule, routes, orders, {"aisle_0": 2}, HANDOVER)
+
+    by_id = {r.order_id: r for r in result.orders}
+    assert by_id[0].is_express is False
+    assert by_id[1].is_express is True
+    assert by_id[0].due_time == 0.0 + DUE_DATE_FACTOR * 3.0 + DUE_DATE_BUFFER_MINUTES
+    assert by_id[1].due_time == 0.0 + DUE_DATE_FACTOR_EXPRESS * 3.0 + DUE_DATE_BUFFER_MINUTES
+    assert by_id[1].due_time < by_id[0].due_time
+
+
+def test_on_time_rate_express_ignores_non_express_orders():
+    routes = {
+        0: Route(order_id=0, legs=[Leg("aisle_0", "n1", "n2", 3.0)]),
+        1: Route(order_id=1, legs=[Leg("aisle_0", "n1", "n2", 3.0)]),
+    }
+    orders = [
+        Order(0, "n1", "aisle_0", "n2", "aisle_0", release_time=0.0, is_express=False),
+        Order(1, "n1", "aisle_0", "n2", "aisle_0", release_time=0.0, is_express=True),
+    ]
+    # Non-express order is absurdly late (misses its due date); express order
+    # is on time. on_time_rate (overall) should reflect both, but
+    # on_time_rate_express should only reflect order 1.
+    assignments = [
+        LegAssignment(order_id=0, leg_index=0, zone_id="aisle_0", entry_node="n1", exit_node="n2",
+                      start=0.0, end=999.0, ready_time=0.0, transporter_id="aisle_0#0"),
+        LegAssignment(order_id=1, leg_index=0, zone_id="aisle_0", entry_node="n1", exit_node="n2",
+                      start=0.0, end=3.0, ready_time=0.0, transporter_id="aisle_0#1"),
+    ]
+    schedule = Schedule(method="test", assignments=assignments)
+    result = evaluate_schedule(schedule, routes, orders, {"aisle_0": 2}, HANDOVER)
+
+    assert result.on_time_rate == 0.5
+    assert result.on_time_rate_express == 1.0
+
+
+def test_on_time_rate_express_defaults_to_one_without_express_orders():
+    routes = {0: Route(order_id=0, legs=[Leg("aisle_0", "n1", "n2", 3.0)])}
+    orders = [Order(0, "n1", "aisle_0", "n2", "aisle_0", release_time=0.0, is_express=False)]
+    assignments = [
+        LegAssignment(order_id=0, leg_index=0, zone_id="aisle_0", entry_node="n1", exit_node="n2",
+                      start=0.0, end=999.0, ready_time=0.0, transporter_id="aisle_0#0"),
+    ]
+    schedule = Schedule(method="test", assignments=assignments)
+    result = evaluate_schedule(schedule, routes, orders, {"aisle_0": 1}, HANDOVER)
+    assert result.on_time_rate_express == 1.0

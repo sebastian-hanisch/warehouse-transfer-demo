@@ -4,7 +4,7 @@ notion of "good"."""
 
 from dataclasses import dataclass
 
-from warehouse_constants import DUE_DATE_BUFFER_MINUTES, DUE_DATE_FACTOR
+from warehouse_constants import DUE_DATE_BUFFER_MINUTES, DUE_DATE_FACTOR, DUE_DATE_FACTOR_EXPRESS
 
 
 @dataclass
@@ -17,6 +17,7 @@ class OrderResult:
     n_transfers: int
     due_time: float
     on_time: bool
+    is_express: bool = False
 
 
 @dataclass
@@ -48,6 +49,13 @@ class EvaluationResult:
             return 1.0
         return sum(1 for o in self.orders if o.on_time) / len(self.orders)
 
+    @property
+    def on_time_rate_express(self):
+        express_orders = [o for o in self.orders if o.is_express]
+        if not express_orders:
+            return 1.0
+        return sum(1 for o in express_orders if o.on_time) / len(express_orders)
+
 
 def minimal_route_time(route, handover_minutes):
     travel = sum(leg.travel_time for leg in route.legs)
@@ -70,7 +78,8 @@ def evaluate_schedule(schedule, routes, orders, transporters_per_zone, handover_
         completion_time = legs[-1].end
         lead_time = completion_time - order.release_time
         transfer_wait = sum(max(a.start - a.ready_time, 0.0) for a in legs if a.leg_index > 0)
-        due_time = order.release_time + DUE_DATE_FACTOR * minimal_route_time(route, handover_minutes) + DUE_DATE_BUFFER_MINUTES
+        due_date_factor = DUE_DATE_FACTOR_EXPRESS if order.is_express else DUE_DATE_FACTOR
+        due_time = order.release_time + due_date_factor * minimal_route_time(route, handover_minutes) + DUE_DATE_BUFFER_MINUTES
         order_results.append(
             OrderResult(
                 order_id=order_id,
@@ -81,6 +90,7 @@ def evaluate_schedule(schedule, routes, orders, transporters_per_zone, handover_
                 n_transfers=route.n_transfers,
                 due_time=due_time,
                 on_time=completion_time <= due_time,
+                is_express=order.is_express,
             )
         )
         makespan = max(makespan, completion_time)
