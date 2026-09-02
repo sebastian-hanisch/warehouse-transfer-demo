@@ -505,7 +505,10 @@ Verteiler-Zone (schnellere Förderstrecke/Lift). Jede Gasse hat genau einen Umsc
 Hub. Ein zonenübergreifender Auftrag durchläuft damit bis zu drei **Legs**: Gasse → Hub →
 Zielgasse, mit einer festen Umstiegszeit an jedem der beiden Umschlagpunkte.
 
-**Ein Auftrag Schritt für Schritt:** Auftrag 7 soll von einem Lagerplatz in Gasse 2 zu einer
+**Ein Auftrag Schritt für Schritt:** Vom Moment der Freigabe (= abholbereit) bis zur
+tatsächlichen Ankunft am Ziel zählt lückenlos jede Minute in die Gesamtdurchlaufzeit -
+Fahrzeit, Umstiegszeit, jede Wartezeit auf einen Transporter und jede Repositionierung, ohne
+Ausnahme. Auftrag 7 soll von einem Lagerplatz in Gasse 2 zu einer
 Position in Gasse 4. *Leg 1:* Gassen-Shuttle fährt in Gasse 2 zum Hub-Anschluss, sagen wir 3
 Minuten. *Umstieg 1:* feste Umstiegszeit, z. B. 1 Minute, für die Übergabe an den
 Hub-Transporter - plus die Zeit, die Auftrag 7 zusätzlich warten muss, falls gerade kein
