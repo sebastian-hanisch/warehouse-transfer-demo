@@ -1,8 +1,9 @@
 """PDF export of one method's dispatch plan (fpdf2, in-memory).
 
-ASCII-only where formatting is concerned (no en-dash) - the core Helvetica
-font that ships with fpdf2 cannot render U+2013, a bug already found and
-fixed the hard way in the sibling shift-planning demo.
+German umlauts (ä/ö/ü/ß) render fine with the core Helvetica font (Latin-1
+covers them) - only the en-dash (U+2013) does not and must stay out of PDF
+text, a bug already found and fixed the hard way in the sibling
+shift-planning demo. Plain hyphens only here.
 """
 
 from fpdf import FPDF
@@ -18,11 +19,11 @@ def generate_dispatch_pdf(method, evaluation_result, orders_by_id):
 
     pdf.set_font("Helvetica", "", 11)
     pdf.cell(0, 8, f"Verfahren: {METHOD_LABELS.get(method, method)}", ln=True)
-    pdf.cell(0, 8, f"Auftraege: {len(evaluation_result.orders)}", ln=True)
+    pdf.cell(0, 8, f"Aufträge: {len(evaluation_result.orders)}", ln=True)
     pdf.cell(0, 8, f"Gesamtdurchlaufzeit: {evaluation_result.total_lead_time:.1f} min", ln=True)
     pdf.cell(0, 8, f"Durchschn. Durchlaufzeit: {evaluation_result.avg_lead_time:.1f} min", ln=True)
     pdf.cell(0, 8, f"Umstiegs-Wartezeit gesamt: {evaluation_result.total_transfer_wait:.1f} min", ln=True)
-    pdf.cell(0, 8, f"Puenktlichkeit: {evaluation_result.on_time_rate * 100:.0f}%", ln=True)
+    pdf.cell(0, 8, f"Pünktlichkeit: {evaluation_result.on_time_rate * 100:.0f}%", ln=True)
     pdf.ln(4)
 
     pdf.set_font("Helvetica", "B", 9)
@@ -44,7 +45,7 @@ def generate_dispatch_pdf(method, evaluation_result, orders_by_id):
             f"{r.lead_time:.1f}",
             str(r.n_transfers),
             f"{r.transfer_wait:.1f}",
-            "OK" if r.on_time else "spaet",
+            "OK" if r.on_time else "spät",
         ]
         for val, w in zip(row, widths):
             pdf.cell(w, 6, val, border=1)

@@ -1,3 +1,26 @@
+"""
+Lagerlogistik: Transport über mehrere Zonen mit Umschlagpunkten – interaktive Demo
+Sebastian Hanisch - Operations Research und Machine Learning
+
+Fachlich ein Pickup-and-Delivery-Problem mit Transshipment (PDPT): Ware bewegt sich
+durch mehrere Zonen (Regalgassen-Shuttles + zentraler Verteiler/Lift), zonengebundene
+Transporter dürfen ihre eigene Zone nicht verlassen, zonenübergreifende Aufträge
+müssen an einem Umschlagpunkt auf den nächsten Transporter umsteigen.
+
+Vier Dispositionsverfahren im Vergleich: Unoptimiert (FCFS), Dezentral je Zone
+(Greedy/SPT), Koordiniert (eigene Heuristik: Fortsetzungen zuerst, dann Most-Work-
+Remaining) und OR-Tools (CP-SAT). Kernthema: lokal optimale Disposition je Zone
+erzeugt an Umschlagpunkten Wartezeit, die sich kaskadenartig fortpflanzt - eine
+zonenübergreifend koordinierte Disposition vermeidet das systematisch.
+
+Selbe Struktur wie bei den anderen Demos in diesem Workspace: Ergebnis zuerst,
+vollständiger Methodenvergleich sekundär im Expander, dazu "Wie funktioniert diese
+Demo?" und "Mathematische Formulierung" als eigene Expander.
+
+Code-Struktur: Modell, Dispositionsverfahren, Kennzahlen, PDF-Export und
+Visualisierung liegen in den Modulen warehouse_*.py neben dieser Datei.
+"""
+
 import time
 
 import pandas as pd
@@ -19,8 +42,8 @@ from warehouse_dispatch_greedy import dispatch_greedy
 from warehouse_evaluation import evaluate_schedule
 from warehouse_network import build_network
 from warehouse_ortools_solver import solve_ortools, status_label
+from warehouse_pdf_export import generate_dispatch_pdf
 from warehouse_presets import (
-    PRESETS,
     apply_preset,
     bounds,
     init_session_state_defaults,
@@ -37,53 +60,24 @@ from warehouse_visualization import (
     build_warehouse_figure,
 )
 
-st.set_page_config(page_title="Lagerlogistik: Umstiegspunkte", layout="wide")
-
-init_session_state_defaults()
-load_permalink_settings()
-
-st.title("Automatisiertes Hochregallager: Transport ueber mehrere Zonen")
-st.markdown(
-    "Ware bewegt sich durch mehrere **Zonen** (Regalgassen-Shuttles + zentraler "
-    "Verteiler/Lift). Jeder Transporter bleibt in seiner eigenen Zone - grenz-"
-    "ueberschreitende Auftraege muessen an einem **Umschlagpunkt** auf den "
-    "naechsten Transporter umsteigen. Diese Demo zeigt, warum eine Zone, die "
-    "nur fuer sich selbst optimal disponiert, an solchen Umschlagpunkten "
-    "Wartezeit erzeugt - und wie viel eine zonenuebergreifend koordinierte "
-    "Disposition davon vermeidet."
-)
-
-with st.sidebar:
-    st.header("Lagerlayout")
-    n_aisles = st.slider("Anzahl Gassen-Zonen", *bounds("n_aisles_slider"), key="n_aisles_slider")
-    nodes_per_aisle = st.slider("Knoten je Gasse", *bounds("nodes_per_aisle_slider"), key="nodes_per_aisle_slider")
-    hub_nodes = st.slider("Knoten im Verteiler/Hub", *bounds("hub_nodes_slider"), key="hub_nodes_slider")
-
-    st.header("Transporter")
-    trans_aisle = st.slider("Shuttle je Gasse", *bounds("trans_aisle_slider"), key="trans_aisle_slider")
-    trans_hub = st.slider("Transporter im Hub", *bounds("trans_hub_slider"), key="trans_hub_slider")
-    handover = st.slider("Umstiegszeit (min)", *bounds("handover_slider"), key="handover_slider")
-
-    st.header("Auftraege")
-    n_orders = st.slider("Anzahl Auftraege", *bounds("n_orders_slider"), key="n_orders_slider")
-    horizon = st.slider("Zeithorizont (min)", *bounds("horizon_slider"), key="horizon_slider")
-    cross_zone = st.slider("Anteil zonenuebergreifend", *bounds("cross_zone_slider"), key="cross_zone_slider")
-    seed = st.number_input("Seed", *bounds("seed_input"), key="seed_input")
-    st.button("Neuer Zufalls-Seed", on_click=randomize_seed)
-
-    st.header("Beispielszenarien")
-    for name in PRESETS:
-        st.button(name, on_click=apply_preset, args=(name,), width='stretch')
-
-    sync_query_params(
-        {
-            "n_aisles_slider": n_aisles, "nodes_per_aisle_slider": nodes_per_aisle,
-            "hub_nodes_slider": hub_nodes, "trans_aisle_slider": trans_aisle,
-            "trans_hub_slider": trans_hub, "handover_slider": handover,
-            "n_orders_slider": n_orders, "horizon_slider": horizon,
-            "cross_zone_slider": cross_zone, "seed_input": int(seed),
-        }
-    )
+PRESET_BUTTONS = {
+    "Kleines Lager, wenig Verkehr": (
+        "🏬",
+        "Kaum Engpässe an Umschlagpunkten – alle vier Verfahren liegen nah beieinander. "
+        "Zeigt: Koordination hilft nur, wenn Kapazität tatsächlich knapp ist.",
+    ),
+    "Stoßzeit mit Engpass am Umschlagpunkt": (
+        "⚠️",
+        "Nur ein Hub-Transporter, viele zonenübergreifende Aufträge – die Lücke zwischen "
+        "dezentraler und koordinierter Disposition ist hier am deutlichsten sichtbar "
+        "(bewusst geprüft, nicht zufällig getroffen).",
+    ),
+    "Großes Lager": (
+        "🏭",
+        "4 Gassen-Zonen, 40 Aufträge – Stresstest für die Rechenzeit des OR-Tools-Solvers "
+        "bei größerem Format.",
+    ),
+}
 
 
 @st.cache_data
@@ -92,12 +86,6 @@ def _build_scenario(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cro
     orders = generate_orders(network, n_orders, horizon, cross_zone, int(seed))
     routes = route_orders(network, orders)
     return network, orders, routes
-
-
-network, orders, routes = _build_scenario(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, seed)
-transporters_per_zone = {aisle_id: trans_aisle for aisle_id in network.aisle_ids}
-transporters_per_zone[network.hub_id] = trans_hub
-orders_by_id = {o.order_id: o for o in orders}
 
 
 @st.cache_data
@@ -117,6 +105,77 @@ def _run_own_methods(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cr
     return schedules, evaluations
 
 
+st.set_page_config(page_title="Lagerlogistik – Sebastian Hanisch", layout="wide")
+
+st.title("🏭 Lagerlogistik: Umschlagpunkte")
+st.markdown(
+    """
+Interaktive Demo zu einem automatisierten Hochregallager: Ware bewegt sich durch mehrere
+**Zonen** (Regalgassen-Shuttles + ein zentraler Verteiler/Lift). Jeder Transporter bleibt in
+seiner eigenen Zone - Aufträge, die zonenübergreifend müssen, "steigen" an einem
+**Umschlagpunkt** auf den nächsten Transporter um. Kernthema ist, wie stark **lokal optimale
+Disposition je Zone** an Umschlagpunkten Wartezeit erzeugt, die sich kaskadenartig
+fortpflanzt - und wie viel eine **zonenübergreifend koordinierte Disposition** davon
+vermeidet. Hintergrund im Expander "Wie funktioniert diese Demo?" unten sowie formal
+hergeleitet im Expander "📐 Mathematische Formulierung".
+"""
+)
+
+st.caption("🎯 Schnellstart – ein Beispielszenario laden:")
+preset_cols = st.columns(len(PRESET_BUTTONS))
+for col, name in zip(preset_cols, PRESET_BUTTONS):
+    emoji, help_text = PRESET_BUTTONS[name]
+    with col:
+        st.button(f"{emoji} {name}", width='stretch', on_click=apply_preset, args=(name,), help=help_text)
+
+st.caption(
+    "🔗 Die Adresszeile oben spiegelt Ihre aktuelle Konfiguration wider – einfach kopieren, "
+    "um ein Szenario zu teilen."
+)
+
+load_permalink_settings()
+init_session_state_defaults()
+
+with st.sidebar:
+    st.header("⚙️ Einstellungen")
+
+    st.markdown("**Lagerlayout**")
+    n_aisles = st.slider("Anzahl Gassen-Zonen", *bounds("n_aisles_slider"), key="n_aisles_slider")
+    nodes_per_aisle = st.slider("Knoten je Gasse", *bounds("nodes_per_aisle_slider"), key="nodes_per_aisle_slider")
+    hub_nodes = st.slider("Knoten im Verteiler/Hub", *bounds("hub_nodes_slider"), key="hub_nodes_slider")
+
+    st.markdown("**Transporter**")
+    trans_aisle = st.slider("Shuttle je Gasse", *bounds("trans_aisle_slider"), key="trans_aisle_slider")
+    trans_hub = st.slider("Transporter im Hub", *bounds("trans_hub_slider"), key="trans_hub_slider")
+    handover = st.slider("Umstiegszeit (min)", *bounds("handover_slider"), key="handover_slider")
+
+    st.markdown("**Aufträge**")
+    n_orders = st.slider("Anzahl Aufträge", *bounds("n_orders_slider"), key="n_orders_slider")
+    horizon = st.slider("Zeithorizont (min)", *bounds("horizon_slider"), key="horizon_slider")
+    cross_zone = st.slider("Anteil zonenübergreifend", *bounds("cross_zone_slider"), key="cross_zone_slider")
+    seed_lo, seed_hi = bounds("seed_input")
+    seed = st.number_input("Zufalls-Seed", min_value=seed_lo, max_value=seed_hi, step=1, key="seed_input")
+
+    st.button(
+        "🎲 Neuer Zufalls-Seed", width='stretch', on_click=randomize_seed,
+        help="Würfelt einen neuen Zufalls-Seed für die Auftragsgenerierung.",
+    )
+
+sync_query_params(
+    {
+        "n_aisles_slider": n_aisles, "nodes_per_aisle_slider": nodes_per_aisle,
+        "hub_nodes_slider": hub_nodes, "trans_aisle_slider": trans_aisle,
+        "trans_hub_slider": trans_hub, "handover_slider": handover,
+        "n_orders_slider": n_orders, "horizon_slider": horizon,
+        "cross_zone_slider": cross_zone, "seed_input": int(seed),
+    }
+)
+
+network, orders, routes = _build_scenario(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, seed)
+transporters_per_zone = {aisle_id: trans_aisle for aisle_id in network.aisle_ids}
+transporters_per_zone[network.hub_id] = trans_hub
+orders_by_id = {o.order_id: o for o in orders}
+
 schedules, evaluations = _run_own_methods(
     n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, seed, trans_aisle, trans_hub, handover
 )
@@ -125,53 +184,86 @@ schedules, evaluations = _run_own_methods(
 greedy_eval = evaluations["greedy"]
 coordinated_eval = evaluations["coordinated"]
 
-st.header("Ihr optimierter Transportplan")
+st.markdown("## 🎯 Ihr optimierter Transportplan")
+
 wait_reduction = greedy_eval.total_transfer_wait - coordinated_eval.total_transfer_wait
 wait_reduction_pct = (wait_reduction / greedy_eval.total_transfer_wait * 100) if greedy_eval.total_transfer_wait > 0 else 0.0
 
-cols = st.columns(4)
-cols[0].metric("Umstiegs-Wartezeit gesamt", f"{coordinated_eval.total_transfer_wait:.0f} min", f"{-wait_reduction:.0f} min vs. dezentral")
-cols[1].metric("Gesamtdurchlaufzeit", f"{coordinated_eval.total_lead_time:.0f} min")
-cols[2].metric("Puenktlichkeit", f"{coordinated_eval.on_time_rate * 100:.0f}%")
-cols[3].metric("Letzte Auslieferung", f"{coordinated_eval.makespan:.0f} min")
+m1, m2, m3, m4 = st.columns(4)
+m1.metric(
+    "Umstiegs-Wartezeit gesamt", f"{coordinated_eval.total_transfer_wait:.0f} min",
+    delta=f"{-wait_reduction:.0f} min ggü. dezentral", delta_color="inverse",
+)
+m2.metric("Gesamtdurchlaufzeit", f"{coordinated_eval.total_lead_time:.0f} min")
+m3.metric("Pünktlichkeit", f"{coordinated_eval.on_time_rate * 100:.0f}%")
+m4.metric("Letzte Auslieferung", f"{coordinated_eval.makespan:.0f} min")
 
 if greedy_eval.total_transfer_wait > 0:
-    st.caption(
-        f"Im Vergleich zur dezentralen Disposition (jede Zone optimiert nur fuer sich) spart die "
-        f"zonenuebergreifend koordinierte Disposition rund {wait_reduction:.0f} Minuten Umstiegs-"
-        f"Wartezeit ({wait_reduction_pct:.0f}% weniger) - Verfahren: {METHOD_LABELS[METHOD_COORDINATED]}."
+    st.success(
+        f"💡 Im Vergleich zur dezentralen Disposition (jede Zone optimiert nur für sich) spart die "
+        f"zonenübergreifend koordinierte Disposition rund **{wait_reduction:.0f} Minuten** "
+        f"Umstiegs-Wartezeit ({wait_reduction_pct:.0f}% weniger) - Verfahren: "
+        f"{METHOD_LABELS[METHOD_COORDINATED]}."
     )
 else:
-    st.caption("Bei diesem Szenario gibt es kaum Engpaesse an Umschlagpunkten - alle Verfahren liegen nahe beieinander.")
+    st.info("Bei diesem Szenario gibt es kaum Engpässe an Umschlagpunkten - alle Verfahren liegen nah beieinander.")
 
-st.plotly_chart(build_warehouse_figure(network), width='stretch')
+st.plotly_chart(build_warehouse_figure(network), width='stretch', key="warehouse_figure_primary")
+
+pdf_bytes = generate_dispatch_pdf(METHOD_COORDINATED, coordinated_eval, orders_by_id)
+st.download_button(
+    "📄 Transportplan als PDF herunterladen", data=pdf_bytes,
+    file_name="transportplan.pdf", mime="application/pdf", key="pdf_primary",
+)
+
+# ---- Core theme, front and center ----
+st.markdown("---")
+st.subheader("📐 Warum lokale Optimierung an Umschlagpunkten scheitert")
+st.markdown(
+    """
+Alle drei eigenen Verfahren unten lösen **exakt dasselbe Szenario** (gleicher Lagergraph,
+gleiche Transporterzahl, gleiche Aufträge) - sie unterscheiden sich nur darin, in welcher
+Reihenfolge ein frei werdender Transporter unter mehreren wartenden Aufträgen wählt.
+**Dezentral/Greedy** wählt lokal je Zone die kürzeste Fahrzeit (Shortest Processing Time) -
+blind dafür, ob ein Auftrag noch einen Umstieg vor sich hat. **Koordiniert** bevorzugt
+Aufträge, die schon einmal umgestiegen sind, und danach die Order mit dem meisten
+verbleibenden Arbeitsaufwand (Most Work Remaining) - eine zonenübergreifende Sicht, die
+Greedy fehlt.
+"""
+)
+core_evals = {"baseline": evaluations["baseline"], "greedy": greedy_eval, "coordinated": coordinated_eval}
+st.plotly_chart(build_transfer_wait_figure(core_evals), width='stretch', key="transfer_wait_core")
+
+st.markdown("---")
 
 # ---- Detail area ----
-with st.expander("Wie wir das erreichen", expanded=False):
-    tab_baseline, tab_greedy, tab_coordinated, tab_ortools, tab_compare, tab_animation = st.tabs(
-        ["Unoptimiert", "Dezentral (Greedy)", "Koordiniert", "OR-Tools", "Vergleich", "Animation"]
-    )
+with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleich", expanded=False):
+    tabs = st.tabs(["⏱️ Unoptimiert", "🏭 Dezentral (Greedy)", "🔗 Koordiniert", "✅ OR-Tools", "📊 Vergleich", "🎬 Animation"])
 
-    with tab_baseline:
+    with tabs[0]:
         render_method_panel(
             "baseline", schedules["baseline"], evaluations["baseline"], orders_by_id, network, transporters_per_zone,
-            extra_caption="Keine Prioritaetslogik: wer zuerst bereit ist, wird zuerst bedient.",
+            extra_caption="Keine Prioritätslogik: wer zuerst bereit ist, wird zuerst bedient.",
         )
 
-    with tab_greedy:
+    with tabs[1]:
         render_method_panel(
             "greedy", schedules["greedy"], evaluations["greedy"], orders_by_id, network, transporters_per_zone,
-            extra_caption="Jede Zone dispatcht lokal nach kuerzester Fahrzeit (SPT) - ohne Sicht auf andere Zonen.",
+            extra_caption="Jede Zone dispatcht lokal nach kürzester Fahrzeit (SPT) - ohne Sicht auf andere Zonen.",
         )
 
-    with tab_coordinated:
+    with tabs[2]:
         render_method_panel(
             "coordinated", schedules["coordinated"], evaluations["coordinated"], orders_by_id, network, transporters_per_zone,
-            extra_caption="Auftraege, die schon einmal umgestiegen sind, haben Vorrang; sonst gewinnt die Order mit dem meisten verbleibenden Arbeitsaufwand (Most Work Remaining).",
+            extra_caption="Aufträge, die schon einmal umgestiegen sind, haben Vorrang; sonst gewinnt die Order mit "
+                          "dem meisten verbleibenden Arbeitsaufwand (Most Work Remaining).",
         )
 
-    with tab_ortools:
-        st.markdown("Exakter/naeherungsweise optimaler Solver (Google OR-Tools, CP-SAT). Button-gesteuert, da rechenintensiver als die eigenen Heuristiken.")
+    with tabs[3]:
+        st.markdown(
+            "Exakter bzw. näherungsweise optimaler Solver (Google OR-Tools, CP-SAT). Button-gesteuert, da "
+            "rechenintensiver als die eigenen Heuristiken."
+        )
         time_limit = st.slider("Zeitlimit (s)", 1, MAX_ORTOOLS_TIME_LIMIT, DEFAULT_ORTOOLS_TIME_LIMIT, key="ortools_time_limit")
 
         cooldown_active = False
@@ -182,12 +274,12 @@ with st.expander("Wie wir das erreichen", expanded=False):
             cooldown_needed = last_limit + ORTOOLS_COOLDOWN_BUFFER_SECONDS
             cooldown_active = elapsed < cooldown_needed
 
-        solve_clicked = st.button("Mit OR-Tools loesen", disabled=cooldown_active)
+        solve_clicked = st.button("Mit OR-Tools lösen", disabled=cooldown_active)
         if cooldown_active:
-            st.caption(f"Kurze Abkuehlpause aktiv - noch {cooldown_needed - elapsed:.0f}s.")
+            st.caption(f"Kurze Abkühlpause aktiv - noch {cooldown_needed - elapsed:.0f}s.")
 
         if solve_clicked:
-            with st.spinner("OR-Tools loest..."):
+            with st.spinner("OR-Tools löst..."):
                 schedule, status = solve_ortools(routes, orders, transporters_per_zone, handover, time_limit, horizon)
             st.session_state["ortools_last_run_at"] = time.time()
             st.session_state["ortools_last_time_limit"] = time_limit
@@ -204,19 +296,19 @@ with st.expander("Wie wir das erreichen", expanded=False):
             ortools_eval = evaluate_schedule(ortools_schedule, routes, orders, transporters_per_zone, handover)
             render_method_panel("ortools", ortools_schedule, ortools_eval, orders_by_id, network, transporters_per_zone)
         elif ortools_schedule is not None and stale:
-            st.info("Eingaben haben sich geaendert - bitte erneut loesen.")
+            st.info("Eingaben haben sich geändert - bitte erneut lösen.")
         else:
-            st.info("Noch nicht geloest.")
+            st.info("Noch nicht gelöst.")
 
-    with tab_compare:
+    with tabs[4]:
         compare_evals = dict(evaluations)
         ortools_schedule = st.session_state.get("ortools_schedule")
         current_key = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, seed, trans_aisle, trans_hub, handover)
         if ortools_schedule is not None and st.session_state.get("ortools_scenario_key") == current_key:
             compare_evals["ortools"] = evaluate_schedule(ortools_schedule, routes, orders, transporters_per_zone, handover)
 
-        st.plotly_chart(build_kpi_comparison_figure(compare_evals), width='stretch')
-        st.plotly_chart(build_transfer_wait_figure(compare_evals), width='stretch')
+        st.plotly_chart(build_kpi_comparison_figure(compare_evals), width='stretch', key="kpi_comparison")
+        st.plotly_chart(build_transfer_wait_figure(compare_evals), width='stretch', key="transfer_wait_compare")
 
         rows = []
         for method, result in compare_evals.items():
@@ -225,19 +317,101 @@ with st.expander("Wie wir das erreichen", expanded=False):
                     "Verfahren": METHOD_LABELS.get(method, method),
                     "Gesamtdurchlaufzeit (min)": round(result.total_lead_time, 1),
                     "Umstiegs-Wartezeit (min)": round(result.total_transfer_wait, 1),
-                    "Puenktlichkeit": f"{result.on_time_rate * 100:.0f}%",
+                    "Pünktlichkeit": f"{result.on_time_rate * 100:.0f}%",
                     "Letzte Auslieferung (min)": round(result.makespan, 1),
                 }
             )
         st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
+        st.caption("Alle Verfahren lösen dasselbe Szenario mit derselben Kennzahlen-Berechnung - fair vergleichbar.")
 
-    with tab_animation:
-        method_choice = st.selectbox("Verfahren fuer Animation", list(schedules.keys()), format_func=lambda m: METHOD_LABELS.get(m, m), key="anim_method")
-        st.plotly_chart(build_animation_figure(schedules[method_choice], network, orders), width='stretch')
+    with tabs[5]:
+        method_choice = st.selectbox(
+            "Verfahren für Animation", list(schedules.keys()), format_func=lambda m: METHOD_LABELS.get(m, m), key="anim_method",
+        )
+        st.plotly_chart(build_animation_figure(schedules[method_choice], network, orders), width='stretch', key="animation")
+
+with st.expander("Wie funktioniert diese Demo?"):
+    st.markdown(
+        """
+**Die Problemstellung:** In einem automatisierten Hochregallager sind Transporter
+zonengebunden - ein Shuttle in Regalgasse A kann nicht einfach in Regalgasse B weiterfahren.
+Ware, die zwischen Zonen muss, wird an einem **Umschlagpunkt** von einem Transporter auf den
+nächsten übergeben. Fachlich ist das ein **Pickup-and-Delivery-Problem mit Transshipment
+(PDPT)** - ein etabliertes Sonderproblem der Tourenplanung (VRP), bei dem Ladung an
+definierten Punkten das Fahrzeug wechseln darf.
+
+**Lagerlayout:** Hub-and-Spoke - mehrere Gassen-Zonen hängen an einer zentralen
+Verteiler-Zone (schnellere Förderstrecke/Lift). Jede Gasse hat genau einen Umschlagpunkt zum
+Hub. Ein zonenübergreifender Auftrag durchläuft damit bis zu drei **Legs**: Gasse → Hub →
+Zielgasse, mit einer festen Umstiegszeit an jedem der beiden Umschlagpunkte.
+
+**Aufträge:** Bekommen Ursprung, Ziel und eine Release-Zeit; ein einstellbarer Anteil ist
+bewusst zonenübergreifend, damit Umstiege im Standardfall tatsächlich auftreten - sonst zeigt
+der Kernvergleich unten keinen Unterschied (siehe Preset "Kleines Lager, wenig Verkehr").
+
+**Vier Dispositionsverfahren, alle mit derselben Kennzahlen-Berechnung ausgewertet:**
+- **Unoptimiert (FCFS):** keine Prioritätslogik, wer zuerst bereit ist, wird zuerst bedient.
+- **Dezentral/Greedy:** jede Zone dispatcht lokal nach kürzester Fahrzeit (Shortest Processing
+  Time, SPT) - ein lokal sinnvolles, aber blind gegenüber noch offenen Umstiegen agierendes
+  Verfahren.
+- **Koordiniert:** eine eigene Heuristik, die Fortsetzungen (Aufträge, die schon einmal
+  umgestiegen sind) vor frischen Aufträgen bevorzugt, und als Tie-Break die Order mit dem
+  meisten verbleibenden Arbeitsaufwand wählt (Most-Work-Remaining, eine klassische
+  Job-Shop-Dispatchregel).
+- **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer, `AddCumulative` je Zone
+  begrenzt gleichzeitig aktive Legs auf die Anzahl Transporter, eine Präzedenzbedingung
+  erzwingt die Umstiegssynchronisation. Ziel: minimale Gesamtdurchlaufzeit. Button-gesteuert
+  mit Zeitlimit und Cooldown, da rechenintensiver als die eigenen Heuristiken.
+
+**Kern-Kennzahl:** Nicht nur die Gesamtdurchlaufzeit, sondern ausdrücklich die **kumulierte
+Umstiegs-Wartezeit** - genau die Größe, die bei rein lokaler Disposition unbemerkt wächst,
+während die Gesamtdurchlaufzeit oft ähnlich aussieht.
+
+**In einem echten Lager** kämen weitere Nebenbedingungen dazu (Batterie-/Ladezyklen der
+Shuttles, Prioritätsklassen je Auftrag, mehrstöckige Hub-Topologien) - das Grundprinzip aus
+Zonenbindung, Umschlagpunkten und den vier Dispositionsverfahren bleibt aber dasselbe.
+"""
+    )
+
+with st.expander("📐 Mathematische Formulierung"):
+    st.markdown(
+        r"""
+Gegeben ein Auftrag $o$ mit einer Folge von Legs $\ell \in \{1, \ldots, L_o\}$ (Zone,
+Ein-/Ausstiegsknoten, feste Fahrzeit $d_{o,\ell}$), eine Release-Zeit $r_o$, eine feste
+Umstiegszeit $h$ und je Zone $z$ eine Transporteranzahl $c_z$. Gesucht sind Startzeiten
+$s_{o,\ell} \geq 0$ für jeden Leg, die den gesamten Auftragsbestand bedienen und die
+Gesamtdurchlaufzeit minimieren:
+"""
+    )
+    st.latex(r"\min \; \sum_{o} \Big( s_{o,L_o} + d_{o,L_o} - r_o \Big)")
+    st.latex(r"s_{o,1} \geq r_o \qquad \forall o")
+    st.latex(r"s_{o,\ell+1} \geq s_{o,\ell} + d_{o,\ell} + h \qquad \forall o,\, \ell < L_o \quad \text{(Umstiegssynchronisation)}")
+    st.latex(
+        r"\sum_{o,\ell:\; \text{zone}(o,\ell) = z,\; s_{o,\ell} \leq t < s_{o,\ell}+d_{o,\ell}} 1 \;\leq\; c_z"
+        r"\qquad \forall z,\, \forall t \quad \text{(Kapazität je Zone)}"
+    )
+    st.markdown(
+        r"""
+Die zweite Zeile ist die eigentliche Umstiegsbedingung: der nächste Leg eines Auftrags darf
+erst starten, wenn der vorige Leg abgeschlossen UND die Umstiegszeit verstrichen ist - das
+koppelt sonst unabhängige Zonen-Zeitpläne aneinander. Die dritte Zeile ist eine
+**Kapazitätsnebenbedingung je Zone** (zu jedem Zeitpunkt höchstens $c_z$ gleichzeitig aktive
+Legs) - im Code über `AddCumulative` je Zone umgesetzt (`warehouse_ortools_solver.py`), da
+Transporter innerhalb einer Zone austauschbar sind und keine individuelle Zuordnung nötig ist.
+
+Die drei eigenen Heuristiken lösen strukturell dasselbe Problem über eine ereignisgesteuerte
+Simulation (`warehouse_dispatch_core.py`): sobald ein Transporter frei wird UND mindestens ein
+Leg bereit ist, wird der Leg mit der höchsten Priorität zugewiesen - Start = aktueller
+Zeitpunkt. Die drei Verfahren unterscheiden sich ausschließlich in der Prioritätsfunktion
+(konstant bei FCFS, kürzeste Fahrzeit bei Greedy, Fortsetzung-zuerst + verbleibender
+Arbeitsaufwand bei Koordiniert) - dieselbe Simulationslogik, drei verschiedene
+Dispatchregeln.
+"""
+    )
 
 st.markdown("---")
 st.caption(
-    "Teil des [Operations-Research-Demo-Portfolios](https://sebastianhanisch.net/demos.html) von "
-    "[Sebastian Hanisch](https://sebastianhanisch.net) - Operations Research und Machine Learning. "
-    "Interesse an einer massgeschneiderten Loesung? [Kontakt aufnehmen](https://sebastianhanisch.net/kontakt.html)."
+    "Diese Demo ist Teil des Portfolios von [Sebastian Hanisch](https://sebastianhanisch.net) – "
+    "Operations Research und Machine Learning. Interesse an einer maßgeschneiderten Lösung für "
+    "Ihr Unternehmen? [Kontakt aufnehmen](https://sebastianhanisch.net/kontakt.html)"
 )

@@ -1,11 +1,11 @@
 """Example scenarios and permalink logic.
 
-WICHTIG - eine Wahrheitsquelle fuer Wertebereiche: SETTING_SPECS definiert
-Minimum/Maximum/Default je Widget. Sowohl die Slider in app.py (ueber
+WICHTIG - eine Wahrheitsquelle für Wertebereiche: SETTING_SPECS definiert
+Minimum/Maximum/Default je Widget. Sowohl die Slider in app.py (über
 bounds()) als auch die Permalink-Begrenzung lesen daraus - dieselbe
 Struktur, die in den Schwesterdemos (vrp_demo, shift_demo) eine
-Absturzklasse durch Permalink-Werte ausserhalb des Wertebereichs behoben
-hat. Hier von Anfang an uebernommen statt erst nach einem Fund.
+Absturzklasse durch Permalink-Werte außerhalb des Wertebereichs behoben
+hat. Hier von Anfang an übernommen statt erst nach einem Fund.
 """
 
 import math
@@ -77,7 +77,7 @@ PRESET_KEYS = [
     "cross_zone_slider", "seed_input",
 ]
 
-# Curated, checked scenarios (not random) - "Stosszeit" is tuned so the
+# Curated, checked scenarios (not random) - "Stoßzeit" is tuned so the
 # greedy-vs-koordiniert gap in Umstiegs-Wartezeit is clearly visible, the
 # same way shift_demo's integrality-gap preset is a checked example rather
 # than a lucky random draw.
@@ -86,11 +86,11 @@ PRESETS = {
         n_aisles=2, nodes_per_aisle=4, hub_nodes=2, trans_aisle=1, trans_hub=1,
         handover=1.0, n_orders=8, horizon=30.0, cross=0.5, seed=2,
     ),
-    "Stosszeit mit Engpass am Umschlagpunkt": dict(
+    "Stoßzeit mit Engpass am Umschlagpunkt": dict(
         n_aisles=3, nodes_per_aisle=5, hub_nodes=1, trans_aisle=2, trans_hub=1,
         handover=1.0, n_orders=30, horizon=20.0, cross=0.8, seed=7,
     ),
-    "Grosses Lager": dict(
+    "Großes Lager": dict(
         n_aisles=4, nodes_per_aisle=6, hub_nodes=4, trans_aisle=2, trans_hub=3,
         handover=1.0, n_orders=40, horizon=90.0, cross=0.6, seed=99,
     ),

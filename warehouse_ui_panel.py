@@ -13,7 +13,7 @@ def render_method_panel(method, schedule, evaluation_result, orders_by_id, netwo
     cols = st.columns(4)
     cols[0].metric("Gesamtdurchlaufzeit", f"{evaluation_result.total_lead_time:.0f} min")
     cols[1].metric("Umstiegs-Wartezeit gesamt", f"{evaluation_result.total_transfer_wait:.0f} min")
-    cols[2].metric("Puenktlichkeit", f"{evaluation_result.on_time_rate * 100:.0f}%")
+    cols[2].metric("Pünktlichkeit", f"{evaluation_result.on_time_rate * 100:.0f}%")
     cols[3].metric("Letzte Auslieferung", f"{evaluation_result.makespan:.0f} min")
 
     if extra_caption:
@@ -35,7 +35,7 @@ def render_method_panel(method, schedule, evaluation_result, orders_by_id, netwo
                     "Laufzeit (min)": round(r.lead_time, 1),
                     "Umstiege": r.n_transfers,
                     "Wartezeit (min)": round(r.transfer_wait, 1),
-                    "Termin": "OK" if r.on_time else "spaet",
+                    "Termin": "OK" if r.on_time else "spät",
                 }
             )
         st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)

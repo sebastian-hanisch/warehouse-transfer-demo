@@ -100,7 +100,7 @@ def status_label(status):
     return {
         cp_model.OPTIMAL: "optimal",
         cp_model.FEASIBLE: "feasible (Zeitlimit erreicht)",
-        cp_model.INFEASIBLE: "unloesbar",
+        cp_model.INFEASIBLE: "unlösbar",
         cp_model.UNKNOWN: "kein Ergebnis im Zeitlimit",
-        cp_model.MODEL_INVALID: "ungueltiges Modell",
+        cp_model.MODEL_INVALID: "ungültiges Modell",
     }.get(status, "unbekannt")
