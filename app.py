@@ -2,21 +2,26 @@
 Lagerlogistik: Transport über mehrere Zonen mit Umschlagpunkten – interaktive Demo
 Sebastian Hanisch - Operations Research und Machine Learning
 
-Fachlich auf zwei Ebenen zu verorten, nicht nur einer - das Gesamtbild ist ein
-Pickup-and-Delivery-Problem mit Transshipment (PDPT, eine VRP-Familie): Ware bewegt
-sich durch mehrere Zonen (Regalgassen-Shuttles + zentraler Verteiler/Lift),
-zonengebundene Transporter dürfen ihre eigene Zone nicht verlassen, zonenübergreifende
-Aufträge müssen an einem Umschlagpunkt auf den nächsten Transporter umsteigen. Aber:
-beim Hub-and-Spoke-Layout gibt es pro Auftrag nur EINE gültige Zonenfolge (Gasse -> Hub
--> Zielgasse oder nur die eigene Gasse) - Routing ist hier keine Entscheidung, sondern
-reine Konsequenz der Topologie (`warehouse_routing.py`). Was tatsächlich entschieden
-wird, ist WANN und mit WELCHEM Transporter jedes (bereits feststehende) Leg bedient
-wird - strukturell kein Routing- mehr, sondern ein Scheduling-Problem: parallele
-Maschinen (Transporter je Zone) mit sequenzabhängigen Rüstzeiten (Repositionierung).
-Genau das lösen die vier Dispositionsverfahren unten, weshalb Koordiniert auf einer
-Scheduling-Regel (ATCS) statt einer VRP-Heuristik aufbaut. Transporter werden einzeln
-mit Position geführt (nicht nur als Kapazitätszahl) - wer gerade abgeliefert hat, muss
-leer zum nächsten Einsatzort fahren (Repositionierung), genau wie ein echtes
+Fachlich das Gesamtbild eines Pickup-and-Delivery-Problems mit Transshipment (PDPT,
+eine VRP-Familie): Ware bewegt sich durch mehrere Zonen (Regalgassen-Shuttles +
+zentraler Verteiler/Lift), zonengebundene Transporter dürfen ihre eigene Zone nicht
+verlassen, zonenübergreifende Aufträge müssen an einem Umschlagpunkt auf den nächsten
+Transporter umsteigen. Die Zonenfolge je Auftrag ist beim Hub-and-Spoke-Layout fix
+(Gasse -> Hub -> Zielgasse oder nur die eigene Gasse, `warehouse_routing.py`) - aber
+WELCHES Leg ein Transporter als nächstes übernimmt, ist eine echte
+Sequenzierungsentscheidung mit einer Distanzmatrix dazwischen (Repositionierungszeit
+zwischen Ausstiegsknoten des einen und Einstiegsknoten des nächsten Legs) - strukturell
+dieselbe Kombinatorik wie eine VRP-Tour für ein einzelnes Fahrzeug, keine andere. Was
+diese Aufgabe näher an die Scheduling- als an die VRP-Literatur rückt, ist nicht das
+Fehlen einer Sequenzierung, sondern (a) die Zielgröße - gewichtete Fertigstellungszeit
+und Verspätung relativ zu Fristen, nicht Gesamtdistanz - und (b) die Präzedenz
+zwischen Legs DESSELBEN Auftrags auf VERSCHIEDENEN Transportern/Zonen (Leg 2 darf erst
+starten, wenn Leg 1 in einer anderen Zone fertig ist) - eher mehrstufige
+Job-Shop-Struktur als eine einzelne Fahrzeugtour. Deshalb baut Koordiniert auf einer
+Scheduling-Regel (ATCS) statt einer klassischen VRP-Heuristik auf, obwohl beide
+Sichtweisen dieselbe zugrunde liegende Kombinatorik beschreiben. Transporter werden
+einzeln mit Position geführt (nicht nur als Kapazitätszahl) - wer gerade abgeliefert
+hat, muss leer zum nächsten Einsatzort fahren (Repositionierung), genau wie ein echtes
 Shuttle/AGV.
 
 Vier Dispositionsverfahren im Vergleich: Unoptimiert (FCFS), Dezentral je Zone
@@ -544,17 +549,22 @@ nächsten übergeben. Fachlich ist das ein **Pickup-and-Delivery-Problem mit Tra
 (PDPT)** - ein etabliertes Sonderproblem der Tourenplanung (VRP), bei dem Ladung an
 definierten Punkten das Fahrzeug wechseln darf.
 
-**Aber Vorsicht bei der Einordnung:** PDPT beschreibt das große Bild - warum es
-Umschlagpunkte überhaupt gibt -, nicht das, was hier tatsächlich berechnet wird. Bei
-einem "echten" VRP wäre die Route selbst eine Entscheidung; hier gibt das
-Hub-and-Spoke-Layout jedem Auftrag genau eine gültige Zonenfolge vor (eigene Gasse,
-oder Gasse → Hub → Zielgasse) - keine Alternative, also nichts zu routen. Was übrig
-bleibt und was die vier Verfahren unten tatsächlich lösen, ist: WANN und mit WELCHEM
-Transporter jedes bereits feststehende Leg bedient wird. Das ist strukturell
-**Scheduling auf parallelen Maschinen mit sequenzabhängigen Rüstzeiten**
-(Transporter je Zone = Maschinen, Repositionierung = Rüstzeit) - ein anderes
-Problem als VRP, weshalb Koordiniert unten auf einer Scheduling-Regel (ATCS) statt
-einer Tourenplanungs-Heuristik aufbaut.
+**Einordnung, mit Vorsicht formuliert:** PDPT beschreibt das große Bild - warum es
+Umschlagpunkte überhaupt gibt. Die Zonenfolge je Auftrag ist beim Hub-and-Spoke-Layout
+fix (eigene Gasse, oder Gasse → Hub → Zielgasse) - keine Wahl. Aber WELCHES Leg ein
+Transporter als nächstes übernimmt, IST eine echte Sequenzierungsentscheidung mit einer
+Distanzmatrix dazwischen (Repositionierungszeit zwischen dem Ausstiegsknoten des einen
+und dem Einstiegsknoten des nächsten Legs) - strukturell dieselbe Kombinatorik wie eine
+VRP-Tour für ein einzelnes Fahrzeug, kein anderes Problem. Was diese Aufgabe näher an
+die Scheduling- als an die VRP-Literatur rückt, ist nicht das Fehlen einer
+Sequenzierung, sondern zweierlei: (a) die Zielgröße - gewichtete Fertigstellungszeit
+und Verspätung relativ zu Fristen, nicht Gesamtdistanz -, und (b) die Präzedenz
+zwischen Legs DESSELBEN Auftrags auf VERSCHIEDENEN Transportern/Zonen (Leg 2 darf erst
+starten, wenn Leg 1 in einer anderen Zone fertig ist) - eher mehrstufige
+Job-Shop-Struktur als eine einzelne Fahrzeugtour. Deshalb baut Koordiniert unten auf
+einer Scheduling-Regel (ATCS) statt einer klassischen Tourenplanungs-Heuristik auf -
+beide Sichtweisen beschreiben dieselbe zugrunde liegende Kombinatorik, nur mit
+unterschiedlichem Fokus.
 
 **Lagerlayout:** Hub-and-Spoke - mehrere Gassen-Zonen hängen an einer zentralen
 Verteiler-Zone (schnellere Förderstrecke/Lift). Jede Gasse hat genau einen Umschlagpunkt zum

@@ -11,16 +11,20 @@ nächsten Einsatzort fahren (**Repositionierung**), bevor er wieder Ladung aufne
 
 ## Worum geht's?
 
-Fachlich auf zwei Ebenen zu verorten. Das Gesamtbild ist ein **Pickup-and-Delivery-Problem
-mit Transshipment (PDPT)** – ein etabliertes VRP-Sonderproblem, bei dem Ladung an
-definierten Umschlagpunkten das Fahrzeug wechseln darf. Aber: beim Hub-and-Spoke-Layout
-gibt es pro Auftrag nur eine gültige Zonenfolge (eigene Gasse, oder Gasse → Hub →
-Zielgasse) – Routing ist hier keine Entscheidung, sondern reine Konsequenz der Topologie.
-Was die vier Verfahren unten tatsächlich lösen, ist WANN und mit WELCHEM Transporter jedes
-bereits feststehende Leg bedient wird – strukturell kein Routing-, sondern ein **Scheduling
-mit parallelen Maschinen (Transportern je Zone) und sequenzabhängigen Rüstzeiten
-(Repositionierung)**, weshalb Koordiniert auf einer Scheduling-Regel (ATCS) statt einer
-Tourenplanungs-Heuristik aufbaut.
+Fachlich das Gesamtbild eines **Pickup-and-Delivery-Problems mit Transshipment (PDPT)** –
+ein etabliertes VRP-Sonderproblem, bei dem Ladung an definierten Umschlagpunkten das
+Fahrzeug wechseln darf. Die Zonenfolge je Auftrag ist beim Hub-and-Spoke-Layout fix
+(eigene Gasse, oder Gasse → Hub → Zielgasse) – aber WELCHES Leg ein Transporter als
+nächstes übernimmt, ist eine echte Sequenzierungsentscheidung mit einer Distanzmatrix
+dazwischen (Repositionierungszeit zwischen Ausstiegs- und nächstem Einstiegsknoten) –
+strukturell dieselbe Kombinatorik wie eine VRP-Tour für ein einzelnes Fahrzeug, kein
+anderes Problem. Was diese Aufgabe näher an die Scheduling- als an die VRP-Literatur
+rückt, ist nicht das Fehlen einer Sequenzierung, sondern (a) die Zielgröße – gewichtete
+Fertigstellungszeit und Verspätung relativ zu Fristen, nicht Gesamtdistanz –, und (b) die
+Präzedenz zwischen Legs desselben Auftrags auf verschiedenen Transportern/Zonen – eher
+mehrstufige Job-Shop-Struktur als eine einzelne Fahrzeugtour. Deshalb baut Koordiniert auf
+einer Scheduling-Regel (ATCS) statt einer klassischen Tourenplanungs-Heuristik auf, obwohl
+beide Sichtweisen dieselbe zugrunde liegende Kombinatorik beschreiben.
 
 Der Fokus der Demo: **lokal optimale Disposition je Zone erzeugt an Umschlagpunkten
 Wartezeit und schickt Transporter unnötig durchs Lager – beides pflanzt sich
