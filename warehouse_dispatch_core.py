@@ -1,22 +1,41 @@
 """Shared discrete-event dispatch simulator used by all three own methods
 (baseline, greedy/decentralized, coordinated) - they differ only in the
-priority function that decides which ready leg a freed-up transporter picks
-next. This mirrors classic job-shop dispatching rules:
+priority function that decides which ready leg gets served next whenever a
+transporter is available. This mirrors classic job-shop dispatching rules:
 
 - baseline:     constant priority -> pure first-ready-first-served (FCFS)
-- greedy:       Shortest Processing Time (SPT) - each zone locally prefers
-                the leg that finishes fastest for ITS OWN queue, blind to
-                which order it belongs to or how many transfers still
-                follow. A textbook-greedy, per-resource-optimal rule.
-- coordinated:  Most Work Remaining (MWKR) - a classic multi-stage
-                dispatching rule: prioritize the order with the most
-                remaining travel time (across all its still-open legs and
-                transfers), so cross-zone orders are pushed through instead
-                of stalling at a handover point.
+- greedy:       Shortest Processing Time (SPT) on the current leg's nominal
+                travel time only - each zone locally prefers the leg that
+                finishes fastest for ITS OWN queue, blind to which order it
+                belongs to, how many transfers still follow, AND blind to
+                repositioning: it has no notion of where its idle
+                transporters currently sit, so it can send one clear across
+                the zone for a "short" leg while a much closer leg waits.
+- coordinated:  SPT plus a small weighted look-ahead at the order's whole
+                remaining route AND at how far the nearest idle transporter
+                actually is (see warehouse_dispatch_coordinated.py).
 
-A transporter is only tracked as a *count* per zone during simulation
-(all transporters in a zone are interchangeable); concrete transporter ids
-for the Gantt chart are assigned afterwards by `label_transporters`.
+Transporters are individually tracked (id + current position + free-at
+time), not just counted - a transporter that just dropped off at one node
+must reposition (deadhead, unloaded) to a new leg's entry node before it
+can start carrying it. Repositioning time is real network travel time
+(`network.travel_time`), computed from wherever the transporter's previous
+leg left it - the same mechanic OR-Tools models exactly via per-machine
+sequencing (see warehouse_ortools_solver.py). Every transporter starts at
+its zone's first node (`zone.nodes[0]`, the aisle's hub-facing end for
+aisle zones) at simulation time 0 - a "parked near the entrance" default.
+
+Because repositioning cost depends on WHICH transporter ends up serving a
+leg, and that can only be known at the moment a transporter is actually
+free (not when the leg first became ready - the idle pool keeps changing
+in between), priority is recomputed fresh every time a transporter frees
+up and there is more than one ready leg to choose from, rather than being
+fixed once and cached in a heap. `priority_fn` receives the CURRENT list of
+idle-transporter positions in the leg's own zone, so it CAN factor
+repositioning in (coordinated does; baseline/greedy ignore the argument by
+design). Once a leg is chosen, the transporter requiring the LEAST
+repositioning to reach it is picked (ties broken by whichever has been idle
+longest) - a standard, realistic nearest-vehicle dispatch rule.
 """
 
 import heapq
@@ -31,10 +50,11 @@ class LegAssignment:
     zone_id: str
     entry_node: str
     exit_node: str
-    start: float
+    start: float  # pickup time (after any repositioning) - order actually starts moving
     end: float
     ready_time: float  # earliest the leg *could* have started (release, or prev leg end + handover)
     transporter_id: str = ""
+    repositioning_time: float = 0.0  # empty/deadhead travel immediately before `start`
 
 
 @dataclass
@@ -43,8 +63,19 @@ class Schedule:
     assignments: list  # list[LegAssignment], unsorted
 
 
-def simulate_dispatch(routes, orders, transporters_per_zone, handover_minutes, priority_fn, method_name):
-    """priority_fn(order, route, leg_index, ready_time) -> float, lower = served first."""
+@dataclass
+class _TransporterState:
+    id: str
+    position: str
+    free_at: float
+
+
+def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_minutes, priority_fn, method_name):
+    """priority_fn(order, route, leg_index, ready_time, idle_positions) -> sortable
+    value, lower = served first. idle_positions is the list of node ids
+    where the leg's own zone's CURRENTLY idle transporters sit (may be
+    empty transiently between events - only used to react to positioning,
+    never required)."""
     seq = itertools.count()
     events = []  # heap of (time, seq, kind, payload)
     orders_by_id = {o.order_id: o for o in orders}
@@ -52,17 +83,42 @@ def simulate_dispatch(routes, orders, transporters_per_zone, handover_minutes, p
     for order in orders:
         heapq.heappush(events, (order.release_time, next(seq), "ready", (order.order_id, 0, order.release_time)))
 
-    available = dict(transporters_per_zone)
-    ready_heap = {zone_id: [] for zone_id in transporters_per_zone}
+    idle = {}
+    for zone_id, count in transporters_per_zone.items():
+        home = network.zones[zone_id].nodes[0]
+        idle[zone_id] = [_TransporterState(id=f"{zone_id}#{i}", position=home, free_at=0.0) for i in range(count)]
+
+    ready_queue = {zone_id: [] for zone_id in transporters_per_zone}  # list of (order_id, leg_index, ready_time)
     assignments = []
 
     def try_match(zone_id, now):
-        while available[zone_id] > 0 and ready_heap[zone_id]:
-            _, _, _, order_id, leg_index, ready_time = heapq.heappop(ready_heap[zone_id])
-            available[zone_id] -= 1
-            route = next(r for r in (routes[order_id],))
+        while idle[zone_id] and ready_queue[zone_id]:
+            idle_positions = [t.position for t in idle[zone_id]]
+            best_ready = min(
+                range(len(ready_queue[zone_id])),
+                key=lambda i: (
+                    priority_fn(
+                        orders_by_id[ready_queue[zone_id][i][0]],
+                        routes[ready_queue[zone_id][i][0]],
+                        ready_queue[zone_id][i][1],
+                        ready_queue[zone_id][i][2],
+                        idle_positions,
+                    ),
+                    ready_queue[zone_id][i][2],  # tie-break: ready_time
+                ),
+            )
+            order_id, leg_index, ready_time = ready_queue[zone_id].pop(best_ready)
+            route = routes[order_id]
             leg = route.legs[leg_index]
-            start = now
+
+            best_transporter = min(
+                range(len(idle[zone_id])),
+                key=lambda i: (network.travel_time(zone_id, idle[zone_id][i].position, leg.entry_node), idle[zone_id][i].free_at),
+            )
+            transporter = idle[zone_id].pop(best_transporter)
+            repositioning_time = network.travel_time(zone_id, transporter.position, leg.entry_node)
+
+            start = now + repositioning_time
             end = start + leg.travel_time
             assignments.append(
                 LegAssignment(
@@ -74,9 +130,11 @@ def simulate_dispatch(routes, orders, transporters_per_zone, handover_minutes, p
                     start=start,
                     end=end,
                     ready_time=ready_time,
+                    transporter_id=transporter.id,
+                    repositioning_time=repositioning_time,
                 )
             )
-            heapq.heappush(events, (end, next(seq), "free", zone_id))
+            heapq.heappush(events, (end, next(seq), "free", (zone_id, transporter.id, leg.exit_node)))
             if leg_index + 1 < len(route.legs):
                 next_ready = end + handover_minutes
                 heapq.heappush(
@@ -90,32 +148,11 @@ def simulate_dispatch(routes, orders, transporters_per_zone, handover_minutes, p
             route = routes[order_id]
             leg = route.legs[leg_index]
             zone_id = leg.zone_id
-            prio = priority_fn(orders_by_id[order_id], route, leg_index, ready_time)
-            heapq.heappush(ready_heap[zone_id], (prio, ready_time, next(seq), order_id, leg_index, ready_time))
+            ready_queue[zone_id].append((order_id, leg_index, ready_time))
             try_match(zone_id, time)
         elif kind == "free":
-            zone_id = payload
-            available[zone_id] += 1
+            zone_id, transporter_id, position = payload
+            idle[zone_id].append(_TransporterState(id=transporter_id, position=position, free_at=time))
             try_match(zone_id, time)
 
-    label_transporters(assignments, transporters_per_zone)
     return Schedule(method=method_name, assignments=assignments)
-
-
-def label_transporters(assignments, transporters_per_zone):
-    """Post-hoc greedy interval coloring: assign each leg to a concrete
-    transporter slot within its zone, purely for display (Gantt chart,
-    utilization). Feasibility is guaranteed by construction - the
-    simulator never let more legs run concurrently in a zone than that
-    zone had transporters."""
-    by_zone = {}
-    for a in assignments:
-        by_zone.setdefault(a.zone_id, []).append(a)
-
-    for zone_id, legs in by_zone.items():
-        n = transporters_per_zone[zone_id]
-        next_free = [0.0] * n
-        for a in sorted(legs, key=lambda x: x.start):
-            slot = min(range(n), key=lambda s: (next_free[s] > a.start, next_free[s]))
-            next_free[slot] = a.end
-            a.transporter_id = f"{zone_id}#{slot}"

@@ -5,15 +5,18 @@
 Interaktive Demo zu einem automatisierten Hochregallager: Ware bewegt sich durch mehrere
 **Zonen** (Regalgassen-Shuttles + ein zentraler Verteiler/Lift). Jeder Transporter bleibt in
 seiner eigenen Zone – Aufträge, die zonenübergreifend müssen, "steigen" an einem
-**Umschlagpunkt** auf den nächsten Transporter um.
+**Umschlagpunkt** auf den nächsten Transporter um. Transporter sind einzeln mit realer
+Position modelliert, nicht nur als Kapazitätszahl: wer abgeliefert hat, muss leer zum
+nächsten Einsatzort fahren (**Repositionierung**), bevor er wieder Ladung aufnehmen kann.
 
 ## Worum geht's?
 
 Fachlich ein **Pickup-and-Delivery-Problem mit Transshipment (PDPT)** – ein etabliertes
 VRP-Sonderproblem, bei dem Ladung an definierten Umschlagpunkten das Fahrzeug wechseln darf.
 Der Fokus der Demo: **lokal optimale Disposition je Zone erzeugt an Umschlagpunkten
-Wartezeit, die sich kaskadenartig fortpflanzt** – und eine zonenübergreifend koordinierte
-Disposition vermeidet das systematisch.
+Wartezeit und schickt Transporter unnötig durchs Lager – beides pflanzt sich
+kaskadenartig fort** – und eine zonenübergreifend koordinierte Disposition vermeidet
+das systematisch.
 
 Vier Dispositionsverfahren im direkten Vergleich, alle auf demselben Lagergraphen und mit
 derselben Kennzahlen-Berechnung ausgewertet:
@@ -21,20 +24,33 @@ derselben Kennzahlen-Berechnung ausgewertet:
 - **Unoptimiert (FCFS):** keine Prioritätslogik, wer zuerst bereit ist, wird zuerst bedient.
 - **Dezentral je Zone (Greedy):** jede Zone dispatcht lokal nach kürzester Fahrzeit
   (Shortest Processing Time, SPT) – ein textbuchmäßig lokal-optimales Verfahren, das aber
-  blind dafür ist, ob ein Auftrag noch einen Umstieg vor sich hat.
+  blind dafür ist, ob ein Auftrag noch einen Umstieg vor sich hat, UND blind dafür, wo die
+  eigenen Transporter gerade stehen.
 - **Koordiniert (eigene Heuristik):** übernimmt SPT als dominantes Kriterium wie Greedy,
-  gewichtet die Priorität aber zusätzlich leicht (10 %) mit der restlichen Reise eines
-  Auftrags über alle Zonen hinweg. Eine erste Fassung sortierte *nur* nach kürzester
-  Restroute (SPT komplett verworfen, Shortest-Remaining-Work-First) – verlor im Test über
-  hunderte Zufallsszenarien aber öfter als sie gegen Greedy bei der Gesamtdurchlaufzeit
-  gewann: SPTs Optimalität für eine einzelne Ressource ist real, sie ganz aufzugeben
-  kostet lokal mehr, als die globale Sicht einbringt. Die leicht gewichtete Fassung
-  schlägt Greedy zuverlässig bei beiden Kennzahlen.
-- **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer, `AddCumulative` je Zone
-  begrenzt die gleichzeitig aktiven Legs auf die Anzahl Transporter, eine
-  Präzedenzbedingung erzwingt die Umstiegssynchronisation. Ziel: minimale
-  Gesamtdurchlaufzeit. Button-gesteuert mit Zeitlimit und Cooldown (analog zu den
-  Schwesterdemos).
+  gewichtet die Priorität aber zusätzlich leicht mit (a) der restlichen Reise eines
+  Auftrags über alle Zonen hinweg (10 %) und (b) der Entfernung zum nächsten freien
+  Transporter (150 %). Eine Fassung ohne (b) verlor im Test über hunderte
+  Zufallsszenarien öfter gegen Greedy bei der Gesamtdurchlaufzeit als sie gewann, sobald
+  Transporter überhaupt repositionieren mussten – Greedys lokale SPT-Stärke reichte trotz
+  ihrer Kurzsichtigkeit oft aus, Positionierung ganz zu ignorieren kostete mehr, als die
+  Restroute-Sicht einbrachte. Erst das Positions-Gewicht macht Koordiniert wieder
+  zuverlässig besser als Greedy, bei beiden Kennzahlen, über mehrere Szenario-Familien
+  geprüft.
+- **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer. Da die
+  Repositionierungszeit davon abhängt, WELCHER Transporter einen Leg übernimmt, bekommt
+  jeder Leg eine Maschinen-Variable (welcher der $c_z$ Transporter der Zone), und für
+  jedes Legpaar auf demselben Transporter erzwingt eine reifizierte Nebenbedingung die
+  reale Repositionierungszeit dazwischen – ein Standardmuster für "parallele Maschinen mit
+  sequenzabhängigen Rüstzeiten", deutlich aufwändiger als die `AddCumulative`-Formulierung
+  vor Einführung der Repositionierung, aber weiterhin gut lösbar (< 1 s selbst am oberen
+  Rand der Schieberegler-Bereiche). Ziel: minimale Gesamtdurchlaufzeit. Button-gesteuert
+  mit Zeitlimit und Cooldown (analog zu den Schwesterdemos).
+
+Zusätzlich kann ein Anteil der Aufträge als **Express** markiert werden (engere Frist).
+Nur Koordiniert (Prioritäts-Faktor 0,5) und OR-Tools (Gewicht 3× im Zielwert, klassische
+Weighted-Completion-Time-Formulierung) nutzen die Markierung aktiv – Unoptimiert und
+Greedy ignorieren sie bewusst, um zu zeigen, dass ein rein lokales/unkoordiniertes System
+gesetzte Prioritäten in der Praxis oft schlicht nicht respektiert.
 
 ## Methodik
 
@@ -43,19 +59,21 @@ derselben Kennzahlen-Berechnung ausgewertet:
   Geschwindigkeit sind konfigurierbar.
 - Aufträge bekommen Ursprung/Ziel und eine Release-Zeit; ein Großteil ist bewusst
   zonenübergreifend, damit Umstiege im Standardfall tatsächlich auftreten.
-- Kern-Kennzahl für den Vergleich ist nicht nur die Gesamtdurchlaufzeit, sondern
+- **Repositionierung:** jeder Transporter wird einzeln mit Position und Verfügbarkeit
+  geführt (nicht nur als Kapazitätszahl je Zone), startet an seinem Zonen-Eingang und muss
+  zwischen zwei Aufträgen leer zum nächsten Einstiegsknoten fahren – reale Netzwerk-Distanz,
+  keine Pauschale. Im Gantt-Chart als helle, schraffierte Balken vor dem eigentlichen Leg
+  sichtbar.
+- Kern-Kennzahlen für den Vergleich sind nicht nur die Gesamtdurchlaufzeit, sondern
   ausdrücklich die **kumulierte Umstiegs-Wartezeit** – genau die Größe, die bei rein
   lokaler Disposition unbemerkt wächst, während die Gesamtdurchlaufzeit oft ähnlich
-  aussieht.
+  aussieht – sowie, bei aktiven Express-Aufträgen, deren **Pünktlichkeit** separat von der
+  Gesamtpünktlichkeit.
 - Ein Beispielszenario ("Stoßzeit mit Engpass am Umschlagpunkt") ist bewusst so
   eingestellt (nicht zufällig getroffen), dass die Lücke zwischen dezentral und
-  koordiniert deutlich sichtbar wird: die koordinierte Heuristik senkt die
-  Umstiegs-Wartezeit in diesem Szenario um rund 46 % gegenüber Greedy, bei gleichzeitig
-  niedrigerer Gesamtdurchlaufzeit als sowohl die unoptimierte Basis als auch Greedy selbst,
-  und ohne Pünktlichkeits-Einbußen – Minimierung der Umstiegs-Wartezeit und der
-  Gesamtdurchlaufzeit ziehen hier in dieselbe Richtung, nicht gegeneinander. Im
-  Standardszenario landet die koordinierte Heuristik sogar exakt auf dem OR-Tools-Optimum.
-- Animierte Paket-Bewegung, Gantt-Chart je Transporter, PDF-Export, Permalink.
+  koordiniert deutlich sichtbar wird.
+- Animierte Paket-Bewegung, Gantt-Chart je Transporter (inkl. Repositionierungsfahrten),
+  PDF-Export, Permalink.
 
 ## Dateistruktur
 
@@ -66,15 +84,15 @@ derselben Kennzahlen-Berechnung ausgewertet:
 | `warehouse_network.py` | Hub-and-Spoke-Lagergraph (networkx) |
 | `warehouse_demand.py` | Auftragsgenerierung |
 | `warehouse_routing.py` | Zonen-Pfad je Auftrag (Legs) |
-| `warehouse_dispatch_core.py` | Gemeinsamer Discrete-Event-Simulator für die drei eigenen Verfahren |
-| `warehouse_dispatch_baseline.py` / `_greedy.py` / `_coordinated.py` | Die drei Prioritätsregeln (FCFS / lokales SPT / SPT + leicht gewichtete Restroute) |
-| `warehouse_ortools_solver.py` | CP-SAT-Modell |
+| `warehouse_dispatch_core.py` | Gemeinsamer Discrete-Event-Simulator für die drei eigenen Verfahren, inkl. Transporter-Positionstracking und Repositionierung |
+| `warehouse_dispatch_baseline.py` / `_greedy.py` / `_coordinated.py` | Die drei Prioritätsregeln (FCFS / lokales SPT / SPT + Restroute- und Positions-Gewicht) |
+| `warehouse_ortools_solver.py` | CP-SAT-Modell (Maschinen-Zuordnung + sequenzabhängige Repositionierungszeiten) |
 | `warehouse_evaluation.py` | Gemeinsame KPI-Berechnung |
 | `warehouse_visualization.py` | Lagerschema, Gantt-Chart, Animation, KPI-Vergleich |
 | `warehouse_pdf_export.py` | PDF-Transportplan |
 | `warehouse_presets.py` | Beispielszenarien, Permalink-Logik (`SettingSpec`-Pattern) |
 | `warehouse_ui_panel.py` | Wiederverwendbares Panel je Verfahren |
-| `tests/` | Netzwerk-/Routing-Korrektheit, Kein-Doppel-Buchung, Umstiegs-Präzedenz, KPI-Berechnung an Hand-Beispiel, Permalink-Clamping |
+| `tests/` | Netzwerk-/Routing-Korrektheit, Kein-Doppel-Buchung, Umstiegs-Präzedenz, Repositionierung entspricht realer Netzwerk-Distanz, KPI-Berechnung an Hand-Beispiel, Permalink-Clamping |
 
 ## Lokal ausführen
 

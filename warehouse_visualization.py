@@ -1,7 +1,8 @@
 """Plotly visualizations: static warehouse layout, per-transporter Gantt
 chart (the main "hook" view - gaps are idle transporters, color shows which
-order/leg they carried), an order-level transfer-wait chart, a package
-animation, and a cross-method KPI comparison."""
+order/leg they carried, light hatched bars are repositioning/deadhead
+travel), an order-level transfer-wait chart, a package animation, and a
+cross-method KPI comparison."""
 
 import plotly.graph_objects as go
 
@@ -60,6 +61,9 @@ def build_warehouse_figure(network):
     return fig
 
 
+REPOSITIONING_COLOR = "#cbd5e1"  # light gray - deliberately muted vs. the zone colors of loaded legs
+
+
 def build_gantt_figure(schedule, network, transporters_per_zone):
     colors = zone_colors(network)
     transporter_order = []
@@ -68,8 +72,29 @@ def build_gantt_figure(schedule, network, transporters_per_zone):
             transporter_order.append(f"{zone_id}#{slot}")
 
     fig = go.Figure()
+    legend_shown = False
     for a in sorted(schedule.assignments, key=lambda a: a.start):
-        wait = max(a.start - a.ready_time, 0.0)
+        wait = max(a.start - a.ready_time, 0.0)  # same definition as warehouse_evaluation.py's transfer_wait
+        if a.repositioning_time > 0:
+            fig.add_trace(
+                go.Bar(
+                    x=[a.repositioning_time],
+                    y=[a.transporter_id],
+                    base=[a.start - a.repositioning_time],
+                    orientation="h",
+                    marker=dict(color=REPOSITIONING_COLOR, pattern=dict(shape="/")),
+                    name="Leerfahrt (Repositionierung)",
+                    legendgroup="repositioning",
+                    showlegend=not legend_shown,
+                    hovertext=(
+                        f"Leerfahrt zu Auftrag {a.order_id}, Leg {a.leg_index}<br>"
+                        f"Ziel: {a.entry_node}<br>"
+                        f"{a.start - a.repositioning_time:.1f} - {a.start:.1f} min"
+                    ),
+                    hoverinfo="text",
+                )
+            )
+            legend_shown = True
         fig.add_trace(
             go.Bar(
                 x=[a.end - a.start],
@@ -93,6 +118,7 @@ def build_gantt_figure(schedule, network, transporters_per_zone):
         xaxis_title="Zeit (min)",
         yaxis=dict(categoryorder="array", categoryarray=list(reversed(transporter_order))),
         margin=dict(l=10, r=10, t=30, b=10), height=max(320, 28 * len(transporter_order)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
     return fig
 

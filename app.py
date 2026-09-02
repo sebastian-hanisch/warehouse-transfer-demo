@@ -5,19 +5,26 @@ Sebastian Hanisch - Operations Research und Machine Learning
 Fachlich ein Pickup-and-Delivery-Problem mit Transshipment (PDPT): Ware bewegt sich
 durch mehrere Zonen (Regalgassen-Shuttles + zentraler Verteiler/Lift), zonengebundene
 Transporter dürfen ihre eigene Zone nicht verlassen, zonenübergreifende Aufträge
-müssen an einem Umschlagpunkt auf den nächsten Transporter umsteigen.
+müssen an einem Umschlagpunkt auf den nächsten Transporter umsteigen. Transporter
+werden einzeln mit Position geführt (nicht nur als Kapazitätszahl) - wer gerade
+abgeliefert hat, muss leer zum nächsten Einsatzort fahren (Repositionierung), genau
+wie ein echtes Shuttle/AGV.
 
 Vier Dispositionsverfahren im Vergleich: Unoptimiert (FCFS), Dezentral je Zone
-(Greedy: lokales SPT je Leg), Koordiniert (eigene Heuristik: SPT je Leg plus ein
-kleines Gewicht auf die restliche Reise des Auftrags) und OR-Tools (CP-SAT).
-Kernthema: lokal optimale Disposition je Zone erzeugt an Umschlagpunkten Wartezeit,
-die sich kaskadenartig fortpflanzt - eine zonenübergreifend koordinierte Disposition
-vermeidet das systematisch. Reines "kürzeste Restroute zuerst" (ohne SPT-Gewicht)
-wurde zuerst probiert, verlor aber im Sweep über hunderte Zufallsszenarien öfter als
-es gegen Greedy bei der Gesamtdurchlaufzeit gewann - SPT ist für eine einzelne
-Ressource nachweislich optimal, das komplett zu verwerfen kostet lokal mehr, als die
-globale Sicht gewinnt. Die aktuelle, leicht gewichtete Fassung schlägt Greedy
-zuverlässig bei beiden Kennzahlen.
+(Greedy: lokales SPT je Leg, blind für Repositionierungskosten), Koordiniert (eigene
+Heuristik: SPT je Leg plus kleine Gewichte auf die restliche Reise des Auftrags UND
+auf die Distanz zum nächsten freien Transporter) und OR-Tools (CP-SAT mit
+sequenzabhängigen Rüstzeiten je Transporter). Kernthema: lokal optimale Disposition
+je Zone erzeugt an Umschlagpunkten Wartezeit, die sich kaskadenartig fortpflanzt -
+eine zonenübergreifend koordinierte Disposition vermeidet das systematisch. Reines
+"kürzeste Restroute zuerst" ohne Repositionierungs-Gewicht wurde zuerst probiert,
+verlor aber im Sweep über hunderte Zufallsszenarien öfter als es gegen Greedy bei der
+Gesamtdurchlaufzeit gewann, sobald Repositionierung Teil des Modells wurde - Greedy
+blieb trotz seiner Kurzsichtigkeit lokal stark genug, dass ihn zu ignorieren mehr
+kostete, als die globale Sicht einbrachte. Erst das zusätzliche Gewicht auf die Distanz
+zum nächsten freien Transporter (dieselbe sequenzabhängige Rüstzeit-Logik, die
+OR-Tools exakt löst) macht Koordiniert wieder zuverlässig besser als Greedy - bei
+beiden Kennzahlen, über mehrere Szenario-Familien geprüft.
 
 Ein Anteil der Aufträge kann als Express markiert werden (engere Frist). Nur Koordiniert
 (Prioritäts-Faktor 0,5) und OR-Tools (Gewicht 3 im Zielwert, klassische
@@ -107,9 +114,9 @@ def _run_own_methods(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cr
     tpz[network.hub_id] = trans_hub
 
     schedules = {
-        "baseline": dispatch_baseline(routes, orders, tpz, handover),
-        "greedy": dispatch_greedy(routes, orders, tpz, handover),
-        "coordinated": dispatch_coordinated(routes, orders, tpz, handover),
+        "baseline": dispatch_baseline(network, routes, orders, tpz, handover),
+        "greedy": dispatch_greedy(network, routes, orders, tpz, handover),
+        "coordinated": dispatch_coordinated(network, routes, orders, tpz, handover),
     }
     evaluations = {
         method: evaluate_schedule(schedule, routes, orders, tpz, handover) for method, schedule in schedules.items()
@@ -127,10 +134,13 @@ Interaktive Demo zu einem automatisierten Hochregallager: Ware bewegt sich durch
 seiner eigenen Zone - ein Shuttle aus Gasse 2 fährt nie in Gasse 4. Muss eine Palette von
 Gasse 2 zum Wareneingang in Gasse 4, wird sie am zentralen Verteiler (Hub) von einem
 Gassen-Shuttle auf den Hub-Transporter umgeladen und später am Zielgassen-Anschluss noch
-einmal - jede dieser Übergaben ist ein **Umschlagpunkt**. Kernthema ist, wie stark **lokal
-optimale Disposition je Zone** an solchen Umschlagpunkten Wartezeit erzeugt, die sich
-kaskadenartig fortpflanzt - und wie viel eine **zonenübergreifend koordinierte Disposition**
-davon vermeidet, *ohne* dabei die Gesamtdurchlaufzeit zu verschlechtern. Ein konkretes
+einmal - jede dieser Übergaben ist ein **Umschlagpunkt**. Transporter sind dabei keine
+anonyme Kapazitätszahl, sondern haben eine reale Position: wer gerade abgeliefert hat, muss
+leer zur nächsten Abholung fahren (**Repositionierung**), bevor er wieder Ladung aufnehmen
+kann. Kernthema ist, wie stark **lokal optimale Disposition je Zone** an Umschlagpunkten
+Wartezeit erzeugt und Transporter unnötig durchs Lager schickt - beides pflanzt sich
+kaskadenartig fort - und wie viel eine **zonenübergreifend koordinierte Disposition** davon
+vermeidet, *ohne* dabei die Gesamtdurchlaufzeit zu verschlechtern. Ein konkretes
 Beispiel dazu im Abschnitt "📐 Warum lokale Optimierung an Umschlagpunkten scheitert" unten,
 der komplette Ablauf eines Auftrags im Expander "Wie funktioniert diese Demo?" sowie die
 Formalisierung im Expander "📐 Mathematische Formulierung".
@@ -297,6 +307,17 @@ so zu Umstieg 2. **Koordiniert** wägt zusätzlich leicht ab, wie viel Reise nac
 zurückbekommt, ohne dass Koordiniert deshalb insgesamt schlechter disponiert als Greedy: SPT
 bleibt das Hauptkriterium, weil es für die Gesamtdurchlaufzeit einer einzelnen Ressource
 nachweislich das Beste ist.
+
+**Ein zweites Beispiel zeigt, warum Greedy auch bei der reinen Gesamtdurchlaufzeit
+zurückfällt:** Zwei Legs werden gleichzeitig frei, einer davon am anderen Ende der Gasse als
+der aktuell freie Shuttle steht, der andere direkt daneben - beide nominell fast gleich lang.
+Greedy sieht nur die Fahrzeit des Legs selbst und ist bei einem Unentschieden indifferent; oft
+genug schickt es den Shuttle auf die weite Leerfahrt. Diese Leerfahrt (Repositionierung) zählt
+für die Auslieferung nicht mit, kostet aber echte Zeit - Greedy "sieht" sie beim Entscheiden gar
+nicht. Koordiniert bezieht die Distanz zum nächsten freien Transporter mit einem zweiten
+kleinen Gewicht (150 % der SPT-Fahrzeit) in die Priorität ein und bevorzugt bei ähnlich
+dringenden Legs konsequent den näherliegenden - sichtbar an den hellen, schraffierten Balken im
+Gantt-Chart unten (Leerfahrten), die bei Koordiniert spürbar kürzer ausfallen als bei Greedy.
 """
 )
 core_evals = {"baseline": evaluations["baseline"], "greedy": greedy_eval, "coordinated": coordinated_eval}
@@ -317,14 +338,16 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
     with tabs[1]:
         render_method_panel(
             "greedy", schedules["greedy"], evaluations["greedy"], orders_by_id, network, transporters_per_zone,
-            extra_caption="Jede Zone dispatcht lokal nach kürzester Fahrzeit (SPT) - ohne Sicht auf andere Zonen.",
+            extra_caption="Jede Zone dispatcht lokal nach kürzester Fahrzeit (SPT) - ohne Sicht auf andere Zonen "
+                          "und blind für Repositionierungskosten (helle, schraffierte Balken im Gantt-Chart).",
         )
 
     with tabs[2]:
         render_method_panel(
             "coordinated", schedules["coordinated"], evaluations["coordinated"], orders_by_id, network, transporters_per_zone,
-            extra_caption="Wie Greedy in erster Linie kürzeste Fahrzeit (SPT), zusätzlich leicht gewichtet "
-                          "mit der restlichen Reise des Auftrags über alle Zonen hinweg.",
+            extra_caption="Wie Greedy in erster Linie kürzeste Fahrzeit (SPT), zusätzlich leicht gewichtet mit der "
+                          "restlichen Reise des Auftrags UND der Entfernung zum nächsten freien Transporter - "
+                          "sichtbar an kürzeren/selteneren Leerfahrten im Gantt-Chart.",
         )
 
     with tabs[3]:
@@ -350,7 +373,7 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
 
         if solve_clicked:
             with st.spinner("OR-Tools löst..."):
-                schedule, status = solve_ortools(routes, orders, transporters_per_zone, handover, time_limit, horizon)
+                schedule, status = solve_ortools(network, routes, orders, transporters_per_zone, handover, time_limit, horizon)
             st.session_state["ortools_last_run_at"] = time.time()
             st.session_state["ortools_last_time_limit"] = time_limit
             st.session_state["ortools_schedule"] = schedule
@@ -436,6 +459,14 @@ zusätzliche Minute, die Auftrag 7 an einem der beiden Umschlagpunkte auf einen 
 Transporter wartet, zählt in die Umstiegs-Wartezeit, die im Vergleich unten je Verfahren
 sichtbar wird.
 
+**Repositionierung:** "Frei" heißt nicht "vor Ort". Steht der einzige freie Gassen-Shuttle
+in Gasse 2 gerade am anderen Ende der Gasse, muss er erst leer zum Lagerplatz von Auftrag 7
+fahren, bevor Leg 1 überhaupt beginnt - diese Leerfahrt zählt real mit, auch wenn sie in
+keiner der drei Kennzahlen "Leg" explizit auftaucht. Im Gantt-Chart (Tab "Wie wir das
+erreichen") sind Leerfahrten als helle, schraffierte Balken vor dem eigentlichen Leg
+sichtbar. Jeder Transporter startet die Simulation an seinem Zonen-Eingang; danach hängt
+seine Position immer von seinem letzten Auftrag ab.
+
 **Aufträge:** Bekommen Ursprung, Ziel und eine Release-Zeit; ein einstellbarer Anteil ist
 bewusst zonenübergreifend, damit Umstiege im Standardfall tatsächlich auftreten - sonst zeigt
 der Kernvergleich unten keinen Unterschied (siehe Preset "Kleines Lager, wenig Verkehr").
@@ -454,20 +485,28 @@ Signal nutzt. Koordiniert und OR-Tools tun das dagegen aktiv (Details unten je V
 - **Dezentral/Greedy:** jede Zone dispatcht lokal nach kürzester Fahrzeit des aktuellen Legs
   (Shortest Processing Time, SPT) - für eine einzelne Ressource nachweislich optimal zur
   Minimierung der Summe der Fertigstellungszeiten, aber blind dafür, wie viel Reise ein
-  Auftrag über die eigene Zone hinaus noch vor sich hat.
+  Auftrag über die eigene Zone hinaus noch vor sich hat UND blind dafür, wo die eigenen
+  Transporter gerade stehen - es kann einen Shuttle quer durchs Lager schicken, wenn dessen
+  Leg nominell am kürzesten ist, egal wie weit die Leerfahrt dorthin wäre.
 - **Koordiniert:** eine eigene Heuristik, die SPT als dominantes Kriterium beibehält, die
-  Priorität aber zusätzlich mit einem kleinen Gewicht (10 %) auf die restliche Reise des
-  Auftrags über alle Zonen hinweg versieht. Eine erste Fassung, die *nur* nach kürzester
-  Restroute sortierte (SPT komplett verworfen), verlor im Test über hunderte
-  Zufallsszenarien öfter als sie gegen Greedy bei der Gesamtdurchlaufzeit gewann - SPTs
-  Optimalität für eine einzelne Ressource ist real, sie ganz aufzugeben kostet lokal mehr,
-  als die globale Sicht einbringt. Die leicht gewichtete Fassung gewinnt zuverlässig bei
-  beiden Kennzahlen. Express-Aufträge bekommen zusätzlich einen Prioritäts-Bonus (die
-  Priorität wird mit 0,5 multipliziert, niedriger = früher dran) - dieselbe Logik, nur
-  konsequent nach vorn gezogen.
-- **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer, `AddCumulative` je Zone
-  begrenzt gleichzeitig aktive Legs auf die Anzahl Transporter, eine Präzedenzbedingung
-  erzwingt die Umstiegssynchronisation. Ziel: minimale **gewichtete** Gesamtdurchlaufzeit -
+  Priorität aber zusätzlich mit zwei kleinen Gewichten versieht: 10 % auf die restliche
+  Reise des Auftrags über alle Zonen hinweg, und 150 % auf die Entfernung zum nächsten
+  freien Transporter. Eine erste Fassung ganz ohne Positionsbewusstsein (nur SPT + Restroute)
+  verlor im Test über hunderte Zufallsszenarien öfter als sie gegen Greedy bei der
+  Gesamtdurchlaufzeit gewann, sobald Transporter überhaupt repositionieren mussten - Greedys
+  lokale SPT-Stärke reichte trotz ihrer Kurzsichtigkeit oft aus, das komplett zu ignorieren
+  kostete mehr, als die Restroute-Sicht einbrachte. Erst das zusätzliche Positions-Gewicht
+  macht Koordiniert wieder zuverlässig besser als Greedy, bei beiden Kennzahlen, über
+  mehrere Szenario-Familien geprüft. Express-Aufträge bekommen zusätzlich einen
+  Prioritäts-Bonus (die gesamte Priorität wird mit 0,5 multipliziert, niedriger = früher
+  dran) - dieselbe Logik, nur konsequent nach vorn gezogen.
+- **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer. Weil Repositionierung
+  davon abhängt, WELCHER Transporter einen Leg übernimmt, sind Transporter hier keine
+  anonyme Kapazität mehr wie zuvor ohne Repositionierung: jeder Leg bekommt eine
+  Maschinen-Variable (welcher der c_z Transporter der Zone ihn übernimmt), und für jedes
+  Legpaar auf demselben Transporter erzwingt eine Präzedenzbedingung die reale
+  Repositionierungszeit dazwischen - ein Standardmuster für "parallele Maschinen mit
+  sequenzabhängigen Rüstzeiten". Ziel: minimale **gewichtete** Gesamtdurchlaufzeit -
   Express-Aufträge zählen 3-fach im Zielwert (klassische Weighted-Completion-Time-
   Formulierung), das genaue Analogon zu Koordiniert's Prioritäts-Bonus, nur als echtes
   Optimierungsziel statt als Heuristik-Regel. Button-gesteuert mit Zeitlimit und Cooldown,
@@ -489,10 +528,12 @@ with st.expander("📐 Mathematische Formulierung"):
     st.markdown(
         r"""
 **In Worten, vor der Notation:** Gesucht ist für jeden Leg jedes Auftrags ein Startzeitpunkt,
-der die Summe aller Durchlaufzeiten (Ankunft minus Freigabe) minimiert - unter zwei Arten von
+der die Summe aller Durchlaufzeiten (Ankunft minus Freigabe) minimiert - unter drei Arten von
 Nebenbedingungen: (1) ein Auftrag darf seinen nächsten Leg erst antreten, wenn der vorige
-fertig ist UND die Umstiegszeit verstrichen ist, und (2) eine Zone kann zu keinem Zeitpunkt
-mehr Legs gleichzeitig bedienen, als sie Transporter hat. Formal:
+fertig ist UND die Umstiegszeit verstrichen ist, (2) eine Zone kann zu keinem Zeitpunkt mehr
+Legs gleichzeitig bedienen, als sie Transporter hat, und (3) folgen zwei Legs auf demselben
+Transporter aufeinander, muss dazwischen genug Zeit für die reale Repositionierungsfahrt
+liegen. Formal:
 
 Gegeben ein Auftrag $o$ mit einer Folge von Legs $\ell \in \{1, \ldots, L_o\}$ (Zone,
 Ein-/Ausstiegsknoten, feste Fahrzeit $d_{o,\ell}$), eine Release-Zeit $r_o$, eine feste
@@ -505,40 +546,57 @@ minimieren:
     st.latex(r"\min \; \sum_{o} w_o \Big( s_{o,L_o} + d_{o,L_o} - r_o \Big)")
     st.latex(r"s_{o,1} \geq r_o \qquad \forall o")
     st.latex(r"s_{o,\ell+1} \geq s_{o,\ell} + d_{o,\ell} + h \qquad \forall o,\, \ell < L_o \quad \text{(Umstiegssynchronisation)}")
-    st.latex(
-        r"\sum_{o,\ell:\; \text{zone}(o,\ell) = z,\; s_{o,\ell} \leq t < s_{o,\ell}+d_{o,\ell}} 1 \;\leq\; c_z"
-        r"\qquad \forall z,\, \forall t \quad \text{(Kapazität je Zone)}"
-    )
     st.markdown(
         r"""
-Die zweite Zeile ist die eigentliche Umstiegsbedingung: der nächste Leg eines Auftrags darf
-erst starten, wenn der vorige Leg abgeschlossen UND die Umstiegszeit verstrichen ist - das
-koppelt sonst unabhängige Zonen-Zeitpläne aneinander. Die dritte Zeile ist eine
-**Kapazitätsnebenbedingung je Zone** (zu jedem Zeitpunkt höchstens $c_z$ gleichzeitig aktive
-Legs) - im Code über `AddCumulative` je Zone umgesetzt (`warehouse_ortools_solver.py`), da
-Transporter innerhalb einer Zone austauschbar sind und keine individuelle Zuordnung nötig ist.
-
-Die drei eigenen Heuristiken lösen strukturell dasselbe Problem über eine ereignisgesteuerte
-Simulation (`warehouse_dispatch_core.py`): sobald ein Transporter frei wird UND mindestens ein
-Leg bereit ist, wird der Leg mit der höchsten Priorität zugewiesen - Start = aktueller
-Zeitpunkt. Die drei Verfahren unterscheiden sich ausschließlich in der Prioritätsfunktion:
-konstant bei FCFS, kürzeste Fahrzeit des aktuellen Legs bei Greedy, und bei Koordiniert
+Weil die Repositionierungszeit zwischen zwei Legs davon abhängt, WELCHER konkrete Transporter
+beide übernimmt, bekommt jeder Leg $(o,\ell)$ in Zone $z$ eine Maschinen-Variable
+$m_{o,\ell} \in \{0, \ldots, c_z - 1\}$ (welcher der $c_z$ Transporter ihn fährt). Für jedes
+Paar von Legs $(o,\ell)$, $(o',\ell')$ in derselben Zone gilt dann, sequenzabhängig auf dem
+gleichen Transporter:
 """
     )
     st.latex(
-        r"\text{Priorität}(o,\ell) = p_o \cdot \Big( d_{o,\ell} + 0{,}1 \cdot \sum_{k > \ell} \big(d_{o,k} + h\big) \Big),"
-        r"\qquad p_o = 0{,}5 \text{ falls } o \text{ Express, sonst } 1"
+        r"m_{o,\ell} = m_{o',\ell'} \;\Rightarrow\; "
+        r"\Big[ s_{o',\ell'} \geq s_{o,\ell} + d_{o,\ell} + \rho\big(x_{o,\ell}, e_{o',\ell'}\big) \Big]"
+        r"\;\lor\; \Big[ s_{o,\ell} \geq s_{o',\ell'} + d_{o',\ell'} + \rho\big(x_{o',\ell'}, e_{o,\ell}\big) \Big]"
     )
     st.markdown(
         r"""
-Dieselbe kürzeste-Fahrzeit-Logik wie Greedy ($d_{o,\ell}$), plus ein kleines Gewicht
-(10 %) auf die gesamte noch verbleibende Reise nach dem aktuellen Leg, zusätzlich mit
-$p_o$ skaliert - niedrigerer Wert wird zuerst bedient, ein Express-Auftrag wird also
-konsequent vorgezogen. Eine erste Fassung ohne den $d_{o,\ell}$-Term (reine Sortierung
-nach Restroute) verlor im Test über hunderte Zufallsszenarien öfter als sie gegen Greedy
-bei der Gesamtdurchlaufzeit gewann - dieselbe Simulationslogik, aber drei verschiedene
-Dispatchregeln, deren einziger Unterschied diese eine Formel ist (FCFS: Priorität
-konstant 0; Greedy: $p_o \equiv 1$ und kein Restroute-Term).
+$x_{o,\ell}$ ist der Ausstiegsknoten von Leg $(o,\ell)$, $e_{o,\ell}$ sein Einstiegsknoten,
+$\rho(\cdot,\cdot)$ die reale Fahrzeit zwischen zwei Knoten in dieser Zone
+(`network.travel_time`). In Worten: landen zwei Legs auf demselben Transporter, muss einer
+den anderen vollständig samt Repositionierungsfahrt abschließen, bevor der andere beginnt -
+auf verschiedenen Transportern gibt es dagegen gar keine Bedingung zwischen ihnen (das ist es,
+was gleichzeitiges Arbeiten überhaupt erlaubt). Ein Standardmuster für **parallele Maschinen
+mit sequenzabhängigen Rüstzeiten**, im Code über paarweise reifizierte Nebenbedingungen
+umgesetzt (`warehouse_ortools_solver.py`) - bewusst keine `AddCumulative`-Kapazitätsformel
+mehr wie vor Einführung der Repositionierung, weil Transporter innerhalb einer Zone dafür
+austauschbar sein müssten, was mit positionsabhängigen Rüstzeiten nicht mehr gilt.
+
+Die drei eigenen Heuristiken lösen strukturell dasselbe Problem über eine ereignisgesteuerte
+Simulation (`warehouse_dispatch_core.py`): sobald ein Transporter frei wird UND mindestens ein
+Leg bereit ist, wird der Leg mit der höchsten Priorität zugewiesen, dann - unter allen gerade
+freien Transportern der Zone - der mit der geringsten Repositionierungsfahrt zu diesem Leg.
+Start = aktueller Zeitpunkt plus diese Fahrzeit. Die drei Verfahren unterscheiden sich
+ausschließlich in der Prioritätsfunktion: konstant bei FCFS, kürzeste Fahrzeit des aktuellen
+Legs bei Greedy, und bei Koordiniert
+"""
+    )
+    st.latex(
+        r"\text{Priorität}(o,\ell) = p_o \cdot \Big( d_{o,\ell} + 0{,}1 \cdot \sum_{k > \ell} \big(d_{o,k} + h\big)"
+        r" + 1{,}5 \cdot \min_{\text{frei } t} \rho(t, e_{o,\ell}) \Big), \qquad p_o = 0{,}5 \text{ falls } o \text{ Express, sonst } 1"
+    )
+    st.markdown(
+        r"""
+Dieselbe kürzeste-Fahrzeit-Logik wie Greedy ($d_{o,\ell}$), plus ein kleines Gewicht (10 %)
+auf die gesamte noch verbleibende Reise nach dem aktuellen Leg, plus ein zweites Gewicht
+(150 %) auf die Fahrzeit zum NÄCHSTEN gerade freien Transporter $t$ - beides zusammen mit
+$p_o$ skaliert, niedrigerer Wert wird zuerst bedient. Eine erste Fassung ohne den
+Repositionierungs-Term verlor im Test über hunderte Zufallsszenarien öfter als sie gegen
+Greedy bei der Gesamtdurchlaufzeit gewann, sobald Transporter überhaupt repositionieren
+mussten - dieselbe Simulationslogik, aber drei verschiedene Dispatchregeln, deren einziger
+Unterschied diese eine Formel ist (FCFS: Priorität konstant 0; Greedy: $p_o \equiv 1$, kein
+Restroute- und kein Repositionierungs-Term).
 """
     )
 

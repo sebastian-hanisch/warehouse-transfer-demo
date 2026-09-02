@@ -8,9 +8,9 @@ route in the sibling VRP demo.
 from warehouse_dispatch_core import simulate_dispatch
 
 
-def _priority(order, route, leg_index, ready_time):
+def _priority(order, route, leg_index, ready_time, idle_positions):
     return 0.0
 
 
-def dispatch_baseline(routes, orders, transporters_per_zone, handover_minutes):
-    return simulate_dispatch(routes, orders, transporters_per_zone, handover_minutes, _priority, "baseline")
+def dispatch_baseline(network, routes, orders, transporters_per_zone, handover_minutes):
+    return simulate_dispatch(network, routes, orders, transporters_per_zone, handover_minutes, _priority, "baseline")
