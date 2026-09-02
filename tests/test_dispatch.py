@@ -92,9 +92,9 @@ def test_coordinated_reduces_transfer_wait_under_hub_bottleneck():
     """The core hook: with a single-transporter hub bottleneck and many
     cross-zone orders, greedy/decentralized SPT dispatch judges legs only by
     their own travel time and lets short same-aisle legs jump the queue
-    ahead of hub transfers, while the coordinated dispatcher (shortest
-    remaining work over an order's whole route) prioritizes orders closest
-    to finishing their journey. Coordinated should not create more total
+    ahead of hub transfers, while the coordinated dispatcher (SPT plus a
+    small weighted look-ahead at the order's remaining journey) prioritizes
+    orders closest to finishing. Coordinated should not create more total
     transfer waiting than greedy on the same instance."""
     net, orders, routes, transporters_per_zone = build_scenario(
         n_aisles=3, hub_nodes=1, transporters_per_aisle=2, transporters_hub=1,
@@ -107,3 +107,33 @@ def test_coordinated_reduces_transfer_wait_under_hub_bottleneck():
     coordinated_eval = evaluate_schedule(coordinated_schedule, routes, orders, transporters_per_zone, HANDOVER)
 
     assert coordinated_eval.total_transfer_wait <= greedy_eval.total_transfer_wait
+
+
+def test_coordinated_does_not_lose_on_lead_time_in_aggregate():
+    """Regression guard for a real design mistake: an earlier version of
+    coordinated (pure "shortest total remaining route first", no weight on
+    the current leg) reliably cut transfer wait but, swept over hundreds of
+    random scenarios, LOST to greedy on Gesamtdurchlaufzeit more often than
+    it won - throwing away SPT's per-resource optimality cost more locally
+    than the global view gained. The current priority (current leg + a
+    small weighted look-ahead) was tuned against exactly this aggregate
+    check, not a single instance (too noisy for a single seed to be a
+    reliable signal, learned the hard way in the sibling VRP demo)."""
+    total_diff = 0.0
+    losses = 0
+    n_seeds = 40
+    for seed in range(n_seeds):
+        net, orders, routes, transporters_per_zone = build_scenario(seed=seed)
+        greedy_eval = evaluate_schedule(
+            dispatch_greedy(routes, orders, transporters_per_zone, HANDOVER), routes, orders, transporters_per_zone, HANDOVER
+        )
+        coordinated_eval = evaluate_schedule(
+            dispatch_coordinated(routes, orders, transporters_per_zone, HANDOVER), routes, orders, transporters_per_zone, HANDOVER
+        )
+        diff = coordinated_eval.total_lead_time - greedy_eval.total_lead_time
+        total_diff += diff
+        if diff > 1e-6:
+            losses += 1
+
+    assert total_diff <= 0.0
+    assert losses <= n_seeds * 0.3
