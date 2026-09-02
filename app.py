@@ -17,8 +17,13 @@ Fehlen einer Sequenzierung, sondern (a) die Zielgröße - gewichtete Fertigstell
 und Verspätung relativ zu Fristen, nicht Gesamtdistanz - und (b) die Präzedenz
 zwischen Legs DESSELBEN Auftrags auf VERSCHIEDENEN Transportern/Zonen (Leg 2 darf erst
 starten, wenn Leg 1 in einer anderen Zone fertig ist) - eher mehrstufige
-Job-Shop-Struktur als eine einzelne Fahrzeugtour. Deshalb baut Koordiniert auf einer
-Scheduling-Regel (ATCS) statt einer klassischen VRP-Heuristik auf, obwohl beide
+Job-Shop-Struktur als eine einzelne Fahrzeugtour. Diese Transfer-Synchronisation ist
+in der VRP-Literatur selbst ein anerkanntes Teilgebiet - "VRP with Synchronization
+Constraints" (Übersicht: Drexl 2012) bzw., noch konkreter für eine Hub-Hierarchie aus
+verschiedenen Fahrzeugflotten, das Multi-Echelon-VRP (Übersicht: Cuda/Guastaroba/
+Speranza 2015); PDPT wird dort meist als Unterfall genau wegen dieser
+Transfer-Synchronisation geführt, nicht als Nebenaspekt. Deshalb baut Koordiniert auf
+einer Scheduling-Regel (ATCS) statt einer klassischen VRP-Heuristik auf, obwohl beide
 Sichtweisen dieselbe zugrunde liegende Kombinatorik beschreiben. Transporter werden
 einzeln mit Position geführt (nicht nur als Kapazitätszahl) - wer gerade abgeliefert
 hat, muss leer zum nächsten Einsatzort fahren (Repositionierung), genau wie ein echtes
@@ -561,10 +566,15 @@ Sequenzierung, sondern zweierlei: (a) die Zielgröße - gewichtete Fertigstellun
 und Verspätung relativ zu Fristen, nicht Gesamtdistanz -, und (b) die Präzedenz
 zwischen Legs DESSELBEN Auftrags auf VERSCHIEDENEN Transportern/Zonen (Leg 2 darf erst
 starten, wenn Leg 1 in einer anderen Zone fertig ist) - eher mehrstufige
-Job-Shop-Struktur als eine einzelne Fahrzeugtour. Deshalb baut Koordiniert unten auf
-einer Scheduling-Regel (ATCS) statt einer klassischen Tourenplanungs-Heuristik auf -
-beide Sichtweisen beschreiben dieselbe zugrunde liegende Kombinatorik, nur mit
-unterschiedlichem Fokus.
+Job-Shop-Struktur als eine einzelne Fahrzeugtour. Diese Transfer-Synchronisation ist in
+der VRP-Literatur selbst ein anerkanntes Teilgebiet - "VRP with Synchronization
+Constraints" (Übersichtsartikel: Drexl 2012) bzw., noch konkreter für eine
+Hub-Hierarchie aus verschiedenen Fahrzeugflotten, das Multi-Echelon-VRP
+(Übersichtsartikel: Cuda/Guastaroba/Speranza 2015); PDPT wird dort meist als Unterfall
+genau wegen dieser Transfer-Synchronisation geführt, nicht als Nebenaspekt. Deshalb
+baut Koordiniert unten auf einer Scheduling-Regel (ATCS) statt einer klassischen
+Tourenplanungs-Heuristik auf - beide Sichtweisen beschreiben dieselbe zugrunde
+liegende Kombinatorik, nur mit unterschiedlichem Fokus.
 
 **Lagerlayout:** Hub-and-Spoke - mehrere Gassen-Zonen hängen an einer zentralen
 Verteiler-Zone (schnellere Förderstrecke/Lift). Jede Gasse hat genau einen Umschlagpunkt zum

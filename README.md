@@ -22,7 +22,12 @@ anderes Problem. Was diese Aufgabe näher an die Scheduling- als an die VRP-Lite
 rückt, ist nicht das Fehlen einer Sequenzierung, sondern (a) die Zielgröße – gewichtete
 Fertigstellungszeit und Verspätung relativ zu Fristen, nicht Gesamtdistanz –, und (b) die
 Präzedenz zwischen Legs desselben Auftrags auf verschiedenen Transportern/Zonen – eher
-mehrstufige Job-Shop-Struktur als eine einzelne Fahrzeugtour. Deshalb baut Koordiniert auf
+mehrstufige Job-Shop-Struktur als eine einzelne Fahrzeugtour. Diese
+Transfer-Synchronisation ist in der VRP-Literatur selbst ein anerkanntes Teilgebiet –
+"VRP with Synchronization Constraints" (Übersicht: Drexl 2012) bzw., noch konkreter für
+eine Hub-Hierarchie aus verschiedenen Fahrzeugflotten, das Multi-Echelon-VRP (Übersicht:
+Cuda/Guastaroba/Speranza 2015); PDPT wird dort meist als Unterfall genau wegen dieser
+Transfer-Synchronisation geführt, nicht als Nebenaspekt. Deshalb baut Koordiniert auf
 einer Scheduling-Regel (ATCS) statt einer klassischen Tourenplanungs-Heuristik auf, obwohl
 beide Sichtweisen dieselbe zugrunde liegende Kombinatorik beschreiben.
 
