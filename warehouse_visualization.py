@@ -168,9 +168,15 @@ def build_kpi_comparison_figure(evaluations):
 def build_lead_time_composition_figure(evaluations, handover_minutes):
     """Stacked bar: what the average Gesamtdurchlaufzeit is MADE OF per
     method - pure travel time (non-negotiable), fixed handover overhead,
-    and everything else (waiting for a transporter, repositioning). This is
-    the only place Umstiegs-Wartezeit shows up as a number - as an
-    explanation of composition, not as a metric any method is scored on."""
+    and everything else. The "wait" bucket is a residual (avg_lead_time -
+    travel - handover), so it covers ALL non-travel, non-fixed-handover
+    time: waiting for the very first pickup AND at later Umschlagpunkte,
+    plus repositioning throughout - not just transfers, hence the label
+    below says "auf Transporter", not "Umstiege" (an earlier version did,
+    which undersold what the bucket actually contains - a single-leg order
+    with zero transfers can still contribute pickup wait to this number).
+    This is the only place this wait shows up as a number - an explanation
+    of composition, not as a metric any method is scored on."""
     methods = list(evaluations.keys())
     travel = []
     handover = []
@@ -184,7 +190,7 @@ def build_lead_time_composition_figure(evaluations, handover_minutes):
     fig = go.Figure()
     fig.add_trace(go.Bar(x=methods, y=travel, name="Reine Fahrzeit", marker_color="#2563eb"))
     fig.add_trace(go.Bar(x=methods, y=handover, name="Umstiegszeit (fest)", marker_color="#059669"))
-    fig.add_trace(go.Bar(x=methods, y=wait, name="Warten (Umstiege + Repositionierung)", marker_color="#dc2626"))
+    fig.add_trace(go.Bar(x=methods, y=wait, name="Warten (auf Transporter + Repositionierung)", marker_color="#dc2626"))
     fig.update_layout(
         barmode="stack",
         yaxis_title="Ø Gesamtdurchlaufzeit (min)",
