@@ -78,6 +78,14 @@ def minimal_route_time(route, handover_minutes):
     return travel + route.n_transfers * handover_minutes
 
 
+def due_time_for_order(order, route, handover_minutes):
+    """Shared with the dispatchers that use it as a priority/objective
+    signal (coordinated, OR-Tools), not just for after-the-fact KPI
+    reporting - single source of truth for what a "deadline" means here."""
+    buffer_minutes = DUE_DATE_BUFFER_MINUTES_EXPRESS if order.is_express else DUE_DATE_BUFFER_MINUTES
+    return order.release_time + minimal_route_time(route, handover_minutes) + buffer_minutes
+
+
 def evaluate_schedule(schedule, routes, orders, handover_minutes):
     by_order = {}
     for a in schedule.assignments:
@@ -95,8 +103,7 @@ def evaluate_schedule(schedule, routes, orders, handover_minutes):
         lead_time = completion_time - order.release_time
         pure_travel_time = sum(leg.travel_time for leg in route.legs)
         transfer_wait = sum(max(a.start - a.ready_time, 0.0) for a in legs if a.leg_index > 0)
-        buffer_minutes = DUE_DATE_BUFFER_MINUTES_EXPRESS if order.is_express else DUE_DATE_BUFFER_MINUTES
-        due_time = order.release_time + minimal_route_time(route, handover_minutes) + buffer_minutes
+        due_time = due_time_for_order(order, route, handover_minutes)
         order_results.append(
             OrderResult(
                 order_id=order_id,

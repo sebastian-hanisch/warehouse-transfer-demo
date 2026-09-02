@@ -31,17 +31,28 @@ demo's scenarios, but real should the numbers ever look suspiciously close.
 Objective: minimize total completion time, weighted so express orders
 (order.is_express) count EXPRESS_WEIGHT times as much - a classic
 weighted-completion-time formulation, the exact objective analogue of
-coordinated's EXPRESS_PRIORITY_FACTOR.
+coordinated's EXPRESS_PRIORITY_FACTOR. Blended in on top (2026-09-02): a
+tardiness penalty, TARDINESS_PENALTY_WEIGHT times each order's
+`max(0, completion - due_time)`, the exact analogue of what coordinated
+subtracts from its priority score for the same reason - same constant,
+same semantics, deliberately shared between the exact solver and the
+heuristic (unlike EXPRESS_PRIORITY_FACTOR/EXPRESS_WEIGHT, two
+independently tuned numbers for the same idea). CP-SAT's objective must be
+integer, so TARDINESS_PENALTY_WEIGHT (a small float) is applied by scaling
+the WHOLE objective by OBJECTIVE_SCALE rather than the weight itself -
+doesn't change the argmin, just keeps every coefficient integral.
 """
 
 import math
 
 from ortools.sat.python import cp_model
 
-from warehouse_constants import EXPRESS_WEIGHT
+from warehouse_constants import EXPRESS_WEIGHT, TARDINESS_PENALTY_WEIGHT
 from warehouse_dispatch_core import LegAssignment, Schedule
+from warehouse_evaluation import due_time_for_order
 
 SCALE = 100
+OBJECTIVE_SCALE = 100
 
 
 def solve_ortools(network, routes, orders, transporters_per_zone, handover_minutes, time_limit_seconds, horizon_minutes):
@@ -95,13 +106,21 @@ def solve_ortools(network, routes, orders, transporters_per_zone, handover_minut
                 model.Add(start_a >= start_b + duration_b + reposition_ba).OnlyEnforceIf([same_machine, a_before_b.Not()])
 
     weighted_completions = []
+    tardiness_terms = []
     for order in orders:
         route = routes[order.order_id]
         last_index = len(route.legs) - 1
         start, duration = starts[(order.order_id, last_index)]
         weight = EXPRESS_WEIGHT if order.is_express else 1
         weighted_completions.append(weight * (start + duration))
-    model.Minimize(sum(weighted_completions))
+
+        due_scaled = round(due_time_for_order(order, route, handover_minutes) * SCALE)
+        tardiness = model.NewIntVar(0, horizon, f"tardiness_{order.order_id}")
+        model.AddMaxEquality(tardiness, [0, start + duration - due_scaled])
+        tardiness_terms.append(tardiness)
+
+    tardiness_weight_scaled = round(TARDINESS_PENALTY_WEIGHT * OBJECTIVE_SCALE)
+    model.Minimize(OBJECTIVE_SCALE * sum(weighted_completions) + tardiness_weight_scaled * sum(tardiness_terms))
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit_seconds

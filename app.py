@@ -12,32 +12,43 @@ wie ein echtes Shuttle/AGV.
 
 Vier Dispositionsverfahren im Vergleich: Unoptimiert (FCFS), Dezentral je Zone
 (Greedy: lokales SPT je Leg, blind für Repositionierungskosten), Koordiniert (eigene
-Heuristik: SPT je Leg plus kleine Gewichte auf die restliche Reise des Auftrags UND
-auf die Distanz zum nächsten freien Transporter) und OR-Tools (CP-SAT mit
-sequenzabhängigen Rüstzeiten je Transporter). EINZIGES Optimierungskriterium für alle
-vier Verfahren ist die Gesamtdurchlaufzeit (Summe aller Auftrags-Durchlaufzeiten) -
-Umstiegs-Wartezeit und Repositionierung sind keine eigenen Ziele, sondern Ursachen,
-die sich in der Gesamtdurchlaufzeit niederschlagen; sie tauchen in der App nur noch als
-Erklärung auf, WORAUS sich die Gesamtdurchlaufzeit zusammensetzt (siehe
-`build_lead_time_composition_figure`), nicht als eigene KPI-Kacheln oder
-Vergleichscharts. Kernthema: lokal optimale Disposition je Zone erzeugt an
-Umschlagpunkten Wartezeit, die sich kaskadenartig fortpflanzt und die
-Gesamtdurchlaufzeit verschlechtert - eine zonenübergreifend koordinierte Disposition
-vermeidet das systematisch. Reines "kürzeste Restroute zuerst" ohne
-Repositionierungs-Gewicht wurde zuerst probiert, verlor aber im Sweep über hunderte
-Zufallsszenarien öfter als es gegen Greedy bei der Gesamtdurchlaufzeit gewann, sobald
-Repositionierung Teil des Modells wurde - Greedy blieb trotz seiner Kurzsichtigkeit
-lokal stark genug, dass ihn zu ignorieren mehr kostete, als die globale Sicht
-einbrachte. Erst das zusätzliche Gewicht auf die Distanz zum nächsten freien
-Transporter (dieselbe sequenzabhängige Rüstzeit-Logik, die OR-Tools exakt löst) macht
-Koordiniert wieder zuverlässig besser als Greedy bei der Gesamtdurchlaufzeit, über
-mehrere Szenario-Familien geprüft.
+Heuristik: SPT je Leg plus kleine Gewichte auf die restliche Reise des Auftrags, auf
+die Distanz zum nächsten freien Transporter, UND auf den verbleibenden Zeitpuffer bis
+zur Frist) und OR-Tools (CP-SAT mit sequenzabhängigen Rüstzeiten je Transporter).
+HAUPTKRITERIUM für alle vier Verfahren ist die Gesamtdurchlaufzeit (Summe aller
+Auftrags-Durchlaufzeiten) - Umstiegs-Wartezeit und Repositionierung sind keine eigenen
+Ziele, sondern Ursachen, die sich in der Gesamtdurchlaufzeit niederschlagen; sie
+tauchen in der App nur noch als Erklärung auf, WORAUS sich die Gesamtdurchlaufzeit
+zusammensetzt (siehe `build_lead_time_composition_figure`), nicht als eigene
+KPI-Kacheln oder Vergleichscharts. Koordiniert und OR-Tools blenden zusätzlich einen
+kleinen Verspätungs-/Dringlichkeitsterm mit ein (Details unten je Verfahren) -
+Gesamtdurchlaufzeit bleibt dominant, Pünktlichkeit ist kein zweites, gleichrangiges
+Ziel, sondern ein mitgewichteter Nebenaspekt derselben Zielfunktion. Kernthema: lokal
+optimale Disposition je Zone erzeugt an Umschlagpunkten Wartezeit, die sich
+kaskadenartig fortpflanzt und die Gesamtdurchlaufzeit verschlechtert - eine
+zonenübergreifend koordinierte Disposition vermeidet das systematisch. Reines
+"kürzeste Restroute zuerst" ohne Repositionierungs-Gewicht wurde zuerst probiert,
+verlor aber im Sweep über hunderte Zufallsszenarien öfter als es gegen Greedy bei der
+Gesamtdurchlaufzeit gewann, sobald Repositionierung Teil des Modells wurde - Greedy
+blieb trotz seiner Kurzsichtigkeit lokal stark genug, dass ihn zu ignorieren mehr
+kostete, als die globale Sicht einbrachte. Erst das zusätzliche Gewicht auf die
+Distanz zum nächsten freien Transporter (dieselbe sequenzabhängige Rüstzeit-Logik, die
+OR-Tools exakt löst) macht Koordiniert wieder zuverlässig besser als Greedy bei der
+Gesamtdurchlaufzeit, über mehrere Szenario-Familien geprüft.
 
 Ein Anteil der Aufträge kann als Express markiert werden (engere Frist). Nur Koordiniert
-(Prioritäts-Faktor 0,5) und OR-Tools (Gewicht 3 im Zielwert, klassische
-Weighted-Completion-Time-Formulierung) nutzen die Markierung aktiv - Unoptimiert und
-Greedy ignorieren sie bewusst, um zu zeigen, dass ein rein lokales/unkoordiniertes
-System gesetzte Prioritäten in der Praxis oft schlicht nicht respektiert.
+(Prioritäts-Faktor 0,5 PLUS ein Dringlichkeits-Term basierend auf dem verbleibenden
+Zeitpuffer) und OR-Tools (Gewicht 3 im Zielwert PLUS echter Verspätungs-Strafterm)
+nutzen Frist bzw. Markierung aktiv - Unoptimiert und Greedy ignorieren beides bewusst,
+um zu zeigen, dass ein rein lokales/unkoordiniertes System gesetzte Prioritäten in der
+Praxis oft schlicht nicht respektiert. Der Dringlichkeits-Term bei Koordiniert wurde
+bewusst NICHT als reine "Strafe für bereits eingetretene Verspätung" gebaut (eine
+erste, zu OR-Tools symmetrische Fassung erwies sich als wirkungslos - ein Auftrag ist
+zu dem Zeitpunkt, an dem er nachweislich zu spät dran ist, in der Warteschlange fast
+immer schon allein, also gibt es nichts mehr umzusortieren), sondern als
+kontinuierliches, ungegatetes Signal auf den Zeitpuffer selbst - wirkt schon, bevor ein
+Auftrag tatsächlich zu spät ist, gedeckelt (`SLACK_CAP_MINUTES`), damit komfortabel
+gepufferte Aufträge nicht unbegrenzt zurückgestuft werden.
 
 Selbe Struktur wie bei den anderen Demos in diesem Workspace: Ergebnis zuerst,
 vollständiger Methodenvergleich sekundär im Expander, dazu "Wie funktioniert diese
@@ -327,7 +338,7 @@ kleinen Gewicht (150 % der SPT-Fahrzeit) in die Priorität ein und bevorzugt bei
 dringenden Legs konsequent den näherliegenden - sichtbar an den hellen, schraffierten Balken im
 Gantt-Chart unten (Leerfahrten), die bei Koordiniert spürbar kürzer ausfallen als bei Greedy.
 
-**Beide Effekte zahlen auf dieselbe, einzige Zielgröße ein:** die Gesamtdurchlaufzeit je
+**Beide Effekte zahlen auf dieselbe Zielgröße ein:** die Gesamtdurchlaufzeit je
 Auftrag. Das folgende Diagramm zeigt sie Auftrag für Auftrag im direkten Vergleich.
 """
 )
@@ -540,9 +551,11 @@ Signal nutzt. Koordiniert und OR-Tools tun das dagegen aktiv (Details unten je V
   Transporter gerade stehen - es kann einen Shuttle quer durchs Lager schicken, wenn dessen
   Leg nominell am kürzesten ist, egal wie weit die Leerfahrt dorthin wäre.
 - **Koordiniert:** eine eigene Heuristik, die SPT als dominantes Kriterium beibehält, die
-  Priorität aber zusätzlich mit zwei kleinen Gewichten versieht: 10 % auf die restliche
-  Reise des Auftrags über alle Zonen hinweg, und 150 % auf die Entfernung zum nächsten
-  freien Transporter. Eine erste Fassung ganz ohne Positionsbewusstsein (nur SPT + Restroute)
+  Priorität aber zusätzlich mit drei kleinen Gewichten versieht: 10 % auf die restliche
+  Reise des Auftrags über alle Zonen hinweg, 150 % auf die Entfernung zum nächsten
+  freien Transporter, und 15 % auf den verbleibenden Zeitpuffer bis zur Frist (gedeckelt
+  bei 5 Minuten, damit komfortabel gepufferte Aufträge nicht unbegrenzt zurückgestuft
+  werden). Eine erste Fassung ganz ohne Positionsbewusstsein (nur SPT + Restroute)
   verlor im Test über hunderte Zufallsszenarien öfter als sie gegen Greedy bei der
   Gesamtdurchlaufzeit gewann, sobald Transporter überhaupt repositionieren mussten - Greedys
   lokale SPT-Stärke reichte trotz ihrer Kurzsichtigkeit oft aus, das komplett zu ignorieren
@@ -550,7 +563,12 @@ Signal nutzt. Koordiniert und OR-Tools tun das dagegen aktiv (Details unten je V
   macht Koordiniert wieder zuverlässig besser als Greedy, bei beiden Kennzahlen, über
   mehrere Szenario-Familien geprüft. Express-Aufträge bekommen zusätzlich einen
   Prioritäts-Bonus (die gesamte Priorität wird mit 0,5 multipliziert, niedriger = früher
-  dran) - dieselbe Logik, nur konsequent nach vorn gezogen.
+  dran) - dieselbe Logik, nur konsequent nach vorn gezogen. Der Zeitpuffer-Term wirkt
+  unabhängig davon: je knapper die Frist relativ zur optimistisch geschätzten
+  Restlaufzeit, desto weiter vorne - ehrlich gesagt mit begrenztem Effekt in den
+  Stoßzeit-Szenarien dieser Demo (die Gesamtdurchlaufzeit-Terme dominieren dort meist
+  schon), aber messbar in ruhigeren Szenarien, ohne Gesamtdurchlaufzeit oder
+  Express-Pünktlichkeit spürbar zu verschlechtern.
 - **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer. Weil Repositionierung
   davon abhängt, WELCHER Transporter einen Leg übernimmt, sind Transporter hier keine
   anonyme Kapazität mehr wie zuvor ohne Repositionierung: jeder Leg bekommt eine
@@ -560,16 +578,25 @@ Signal nutzt. Koordiniert und OR-Tools tun das dagegen aktiv (Details unten je V
   sequenzabhängigen Rüstzeiten". Ziel: minimale **gewichtete** Gesamtdurchlaufzeit -
   Express-Aufträge zählen 3-fach im Zielwert (klassische Weighted-Completion-Time-
   Formulierung), das genaue Analogon zu Koordiniert's Prioritäts-Bonus, nur als echtes
-  Optimierungsziel statt als Heuristik-Regel. Button-gesteuert mit Zeitlimit und Cooldown,
-  da rechenintensiver als die eigenen Heuristiken.
+  Optimierungsziel statt als Heuristik-Regel. Zusätzlich fließt eine echte
+  Verspätungsstrafe ein: pro Auftrag eine Variable für `max(0, Fertigstellung - Frist)`,
+  mit eigenem Gewicht zur gewichteten Gesamtdurchlaufzeit addiert - anders als bei
+  Koordiniert funktioniert dieses gegatete "nur bei tatsächlicher Verspätung"-Muster
+  hier, weil OR-Tools global über den gesamten Plan optimiert statt Leg für Leg lokal zu
+  entscheiden. Button-gesteuert mit Zeitlimit und Cooldown, da rechenintensiver als die
+  eigenen Heuristiken.
 
-**Kern-Kennzahl:** Ausschließlich die **Gesamtdurchlaufzeit** (Summe bzw. Durchschnitt über
-alle Auftrags-Durchlaufzeiten) - das einzige Kriterium, nach dem alle vier Verfahren
+**Kern-Kennzahl:** Die **Gesamtdurchlaufzeit** (Summe bzw. Durchschnitt über
+alle Auftrags-Durchlaufzeiten) - das Hauptkriterium, nach dem alle vier Verfahren
 disponieren und verglichen werden. Umstiegs-Wartezeit und Repositionierung sind keine
 eigenen Ziele, sondern Ursachen, die sich in dieser einen Zahl niederschlagen; die
 Aufschlüsselungs-Diagramme oben und im Vergleichstab zeigen nur, WORAUS sie sich
-zusammensetzt. Zusätzlich verfolgt, wenn Express-Aufträge aktiv sind: deren
-**Pünktlichkeit** separat von der Gesamtpünktlichkeit.
+zusammensetzt. Koordiniert und OR-Tools blenden zusätzlich einen kleinen
+Verspätungs-/Dringlichkeitsterm in dieselbe Zielfunktion ein (Details oben je
+Verfahren) - Pünktlichkeit ist damit kein zweites, gleichrangiges Ziel, sondern ein
+mitgewichteter Nebenaspekt, der bei Bedarf leicht in Gesamtdurchlaufzeit "eintauscht".
+Zusätzlich verfolgt, wenn Express-Aufträge aktiv sind: deren **Pünktlichkeit** separat
+von der Gesamtpünktlichkeit.
 
 **In einem echten Lager** kämen weitere Nebenbedingungen dazu (Batterie-/Ladezyklen der
 Shuttles, mehrstöckige Hub-Topologien, tatsächliche Kollisionsvermeidung innerhalb einer
@@ -582,22 +609,26 @@ with st.expander("📐 Mathematische Formulierung"):
     st.markdown(
         r"""
 **In Worten, vor der Notation:** Gesucht ist für jeden Leg jedes Auftrags ein Startzeitpunkt,
-der die Summe aller Durchlaufzeiten (Ankunft minus Freigabe) minimiert - unter drei Arten von
-Nebenbedingungen: (1) ein Auftrag darf seinen nächsten Leg erst antreten, wenn der vorige
-fertig ist UND die Umstiegszeit verstrichen ist, (2) eine Zone kann zu keinem Zeitpunkt mehr
-Legs gleichzeitig bedienen, als sie Transporter hat, und (3) folgen zwei Legs auf demselben
-Transporter aufeinander, muss dazwischen genug Zeit für die reale Repositionierungsfahrt
-liegen. Formal:
+der die gewichtete Summe aller Durchlaufzeiten PLUS eine kleine Verspätungsstrafe minimiert -
+unter drei Arten von Nebenbedingungen: (1) ein Auftrag darf seinen nächsten Leg erst
+antreten, wenn der vorige fertig ist UND die Umstiegszeit verstrichen ist, (2) eine Zone kann
+zu keinem Zeitpunkt mehr Legs gleichzeitig bedienen, als sie Transporter hat, und (3) folgen
+zwei Legs auf demselben Transporter aufeinander, muss dazwischen genug Zeit für die reale
+Repositionierungsfahrt liegen. Formal:
 
 Gegeben ein Auftrag $o$ mit einer Folge von Legs $\ell \in \{1, \ldots, L_o\}$ (Zone,
 Ein-/Ausstiegsknoten, feste Fahrzeit $d_{o,\ell}$), eine Release-Zeit $r_o$, eine feste
-Umstiegszeit $h$, je Zone $z$ eine Transporteranzahl $c_z$, und ein Gewicht $w_o$ (3 für
-Express-Aufträge, sonst 1). Gesucht sind Startzeiten $s_{o,\ell} \geq 0$ für jeden Leg, die
-den gesamten Auftragsbestand bedienen und die **gewichtete** Gesamtdurchlaufzeit
-minimieren:
+Umstiegszeit $h$, je Zone $z$ eine Transporteranzahl $c_z$, ein Gewicht $w_o$ (3 für
+Express-Aufträge, sonst 1), eine Frist $\delta_o$ (`due_time_for_order()`) und ein kleines
+Verspätungsgewicht $\lambda$. Gesucht sind Startzeiten $s_{o,\ell} \geq 0$ für jeden Leg, die
+den gesamten Auftragsbestand bedienen und die **gewichtete** Gesamtdurchlaufzeit PLUS
+Verspätungsstrafe minimieren:
 """
     )
-    st.latex(r"\min \; \sum_{o} w_o \Big( s_{o,L_o} + d_{o,L_o} - r_o \Big)")
+    st.latex(
+        r"\min \; \sum_{o} w_o \Big( s_{o,L_o} + d_{o,L_o} - r_o \Big)"
+        r" \;+\; \lambda \sum_{o} \max\big(0,\; s_{o,L_o} + d_{o,L_o} - \delta_o\big)"
+    )
     st.latex(r"s_{o,1} \geq r_o \qquad \forall o")
     st.latex(r"s_{o,\ell+1} \geq s_{o,\ell} + d_{o,\ell} + h \qquad \forall o,\, \ell < L_o \quad \text{(Umstiegssynchronisation)}")
     st.markdown(
@@ -638,7 +669,8 @@ Legs bei Greedy, und bei Koordiniert
     )
     st.latex(
         r"\text{Priorität}(o,\ell) = p_o \cdot \Big( d_{o,\ell} + 0{,}1 \cdot \sum_{k > \ell} \big(d_{o,k} + h\big)"
-        r" + 1{,}5 \cdot \min_{\text{frei } t} \rho(t, e_{o,\ell}) \Big), \qquad p_o = 0{,}5 \text{ falls } o \text{ Express, sonst } 1"
+        r" + 1{,}5 \cdot \min_{\text{frei } t} \rho(t, e_{o,\ell}) \Big) + 0{,}15 \cdot \min\big(\sigma_{o,\ell},\, 5\big),"
+        r" \qquad p_o = 0{,}5 \text{ falls } o \text{ Express, sonst } 1"
     )
     st.markdown(
         r"""
@@ -650,7 +682,17 @@ Repositionierungs-Term verlor im Test über hunderte Zufallsszenarien öfter als
 Greedy bei der Gesamtdurchlaufzeit gewann, sobald Transporter überhaupt repositionieren
 mussten - dieselbe Simulationslogik, aber drei verschiedene Dispatchregeln, deren einziger
 Unterschied diese eine Formel ist (FCFS: Priorität konstant 0; Greedy: $p_o \equiv 1$, kein
-Restroute- und kein Repositionierungs-Term).
+Restroute-, Repositionierungs- oder Zeitpuffer-Term).
+
+Der letzte Term ist der Zeitpuffer bis zur Frist, $\sigma_{o,\ell} = \delta_o - (r_{o,\ell} +
+d_{o,\ell} + \sum_{k>\ell} (d_{o,k}+h))$ (Frist minus optimistisch geschätzte
+Fertigstellung), gedeckelt bei 5 Minuten, damit komfortabel gepufferte Aufträge nicht
+unbegrenzt zurückgestuft werden - je kleiner (oder negativer) der Puffer, desto niedriger
+die Priorität, desto eher dran. Bewusst KEIN `max(0, ...)`-Gate wie bei OR-Tools' Term oben:
+eine erste, dazu symmetrische Fassung war fast wirkungslos, weil ein Auftrag zu dem
+Zeitpunkt, an dem er nachweislich bereits verspätet ist, in seiner Warteschlange fast immer
+schon allein steht - es gibt dann nichts mehr umzusortieren. Die ungegatete, kontinuierliche
+Fassung wirkt schon vorher, auf Kosten eines wirklich einfachen Vorher-Nachher-Vergleichs.
 """
     )
 

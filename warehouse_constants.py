@@ -80,6 +80,19 @@ EXPRESS_PRIORITY_FACTOR = 0.5
 # higher weight makes finishing it early matter proportionally more.
 EXPRESS_WEIGHT = 3
 
+# OR-Tools ONLY: cost of one minute of lateness (completion_time beyond
+# due_time), relative to one minute of ordinary completion time (whose
+# implicit weight is 1) - blended into the same weighted-completion-time
+# objective via a `max(0, completion - due)` tardiness variable per order.
+# Originally meant to be the SAME constant/mechanism for coordinated too,
+# but that gated ("already late") version turned out empirically inert
+# there (see warehouse_dispatch_coordinated.py's module docstring for why)
+# - coordinated now uses its own continuous, ungated SLACK_WEIGHT instead,
+# a genuinely different mechanism, not just an independently-tuned copy of
+# this one. Baseline and greedy do not use this - they stay blind to due
+# dates entirely, same as they already are to is_express, by design.
+TARDINESS_PENALTY_WEIGHT = 0.5
+
 # OR-Tools
 DEFAULT_ORTOOLS_TIME_LIMIT = 3
 MAX_ORTOOLS_TIME_LIMIT = 5

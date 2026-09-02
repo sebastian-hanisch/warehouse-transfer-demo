@@ -40,17 +40,67 @@ and greedy deliberately do NOT look at is_express at all - the point of the
 comparison is that a naive/local dispatcher ignores stated priorities even
 when they exist, the same complaint real warehouse operators have about
 purely FCFS or purely local systems.
+
+SLACK-BASED PRIORITY (added 2026-09-02, revised twice same day): the
+score is further adjusted by SLACK_WEIGHT times the order's remaining
+slack (capped above at SLACK_CAP_MINUTES), where slack =
+due_time_for_order() minus an optimistic projected completion
+("ready_time + current_leg + future" - what it'd be if everything from
+here on went smoothly, no further queueing). Less slack (or negative -
+already behind) means a lower score, served sooner; comfortable slack
+means a slightly higher score, nudged back a little to make room.
+
+Two real mistakes were made and caught while building this, in order:
+(1) First version was GATED (`max(0, ...)`, only active once already
+projected late), mirroring OR-Tools' tardiness term under one constant
+shared with `warehouse_ortools_solver.py`. Instrumented and swept it: it
+was almost completely inert here - by the time an order's optimistic
+projection crosses its deadline, it has usually already waited so long
+that it's the ONLY ready leg left in its queue (everything else has long
+since been served), so no penalty weight can reorder anything - verified
+directly (byte-identical schedules from weight 0 to 9999). OR-Tools'
+gated version does work (it optimizes globally, not leg-by-leg), so the
+two methods now use genuinely DIFFERENT mechanisms and DIFFERENT
+constants (SLACK_WEIGHT here vs. TARDINESS_PENALTY_WEIGHT there) - unlike
+EXPRESS_PRIORITY_FACTOR/EXPRESS_WEIGHT, two independently-tuned numbers
+for the same idea with no such empirical justification, this split is the
+result of one mechanism demonstrably not working, not an unexamined
+inconsistency.
+(2) Fixing (1) by switching to an ungated, continuous term, a SIGN ERROR
+(`score - weight*slack` instead of `score + weight*slack`) meant more
+slack - i.e. LESS urgency - produced a LOWER score, prioritizing the most
+comfortable orders and deprioritizing the most urgent ones; caught only
+because the aggregate sweep showed tardiness getting WORSE as the weight
+increased, the opposite of the intended direction, which made the sign
+flip obvious.
+With both fixed and swept properly (40 seeds x 4 scenario families):
+total tardiness improves a little in low-congestion scenarios, but is
+roughly flat-to-slightly-worse in the demo's showcase congested/express-
+heavy scenarios (a real, honest limit of a myopic per-leg heuristic:
+pulling one order forward necessarily pushes another back, and in a
+congested system that's often a wash or worse in aggregate, similar in
+spirit to the earlier pure-SRPT lesson). SLACK_CAP_MINUTES keeps the
+"comfortable orders get deprioritized" side of the term from growing
+unbounded, which is what kept Gesamtdurchlaufzeit regression small and
+express on-time rate essentially unaffected (0-1 losses per 40 seeds) at
+the chosen weight - a low-risk, small-but-real nudge, not a strong
+guarantee. Applied AFTER express scaling rather than inside it, so the
+two signals stay independent rather than compounding. Baseline and greedy
+remain blind to due dates entirely, same as to is_express, by design.
 """
 
 from warehouse_constants import EXPRESS_PRIORITY_FACTOR
 from warehouse_dispatch_core import simulate_dispatch
+from warehouse_evaluation import due_time_for_order
 
-# Both weights are relative to the current leg's own duration (weight 1.0,
-# implicit). Swept empirically across several scenario families (see git
-# history / project memory) - representative, robust choices, not knife-edge
-# optima; values within roughly +/-30% of either perform similarly.
+# All three weights are relative to the current leg's own duration (weight
+# 1.0, implicit). Swept empirically across several scenario families (see
+# git history / project memory) - representative, robust choices, not
+# knife-edge optima; values within roughly +/-30% perform similarly.
 FUTURE_WORK_WEIGHT = 0.1
 REPOSITIONING_WEIGHT = 1.5
+SLACK_WEIGHT = 0.15
+SLACK_CAP_MINUTES = 5.0
 
 
 def _future_work(route, leg_index, handover_minutes):
@@ -72,6 +122,10 @@ def dispatch_coordinated(network, routes, orders, transporters_per_zone, handove
             default=0.0,
         )
         score = current_leg + FUTURE_WORK_WEIGHT * future + REPOSITIONING_WEIGHT * nearest_transporter
-        return score * EXPRESS_PRIORITY_FACTOR if order.is_express else score
+        score = score * EXPRESS_PRIORITY_FACTOR if order.is_express else score
+
+        due_time = due_time_for_order(order, route, handover_minutes)
+        slack = due_time - (ready_time + current_leg + future)
+        return score + SLACK_WEIGHT * min(slack, SLACK_CAP_MINUTES)
 
     return simulate_dispatch(network, routes, orders, transporters_per_zone, handover_minutes, priority, "coordinated")
