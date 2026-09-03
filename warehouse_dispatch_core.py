@@ -61,6 +61,28 @@ solver does (see warehouse_dispatch_coordinated.py's module docstring for
 why non-delay dispatch alone cannot minimize a WEIGHTED objective) - without
 it, no priority function, however good, can ever choose to wait for a more
 valuable job that is about to arrive.
+
+Optional `forced_zone`/`forced_sequence` replay a SPECIFIC known prefix of
+decisions for one zone instead of letting priority_fn (+ RCL/lookahead)
+decide them: `forced_sequence` is a list, consumed from the front, of
+either `(order_id, leg_index)` (dispatch exactly this leg next in
+`forced_zone`, bypassing priority_fn entirely) or the sentinel `"WAIT"`
+(defer once, exactly like a lookahead defer, unconditionally). Once the
+list is exhausted, `forced_zone` reverts to normal priority_fn(+RCL+
+lookahead) behavior for the rest of the run - "prefix forced, remainder is
+a baseline rollout", letting a caller ask "what would the FINAL schedule
+look like if zone Z's 3rd decision went to leg X instead" without a much
+more invasive generator/resumable rewrite of this event loop.
+
+Built for a single-zone monotonic-beam-search prototype (explore
+"dispatch vs. wait" branches at each of one zone's decisions, score each
+full resulting schedule) that was tried and did NOT pay off - lost to
+GRASP on every seed tested, see project memory for the numbers and the
+"why" (narrower scope than GRASP - only one zone improved - and a noisier,
+more expensive branch-discovery process, for comparable total runtime).
+Kept anyway since the mechanism itself is small, self-contained, and
+backward-compatible (default `None`, zero effect on existing callers) -
+useful groundwork if a future, better-scoped search idea needs it again.
 """
 
 import heapq
@@ -95,7 +117,7 @@ class _TransporterState:
     free_at: float
 
 
-def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_minutes, priority_fn, method_name, rng=None, rcl_size=1, lookahead_window=0.0):
+def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_minutes, priority_fn, method_name, rng=None, rcl_size=1, lookahead_window=0.0, forced_zone=None, forced_sequence=None):
     """priority_fn(order, route, leg_index, ready_time, idle_positions, now) ->
     sortable value, lower = served first. idle_positions is the list of node
     ids where the leg's own zone's CURRENTLY idle transporters sit (may be
@@ -140,36 +162,57 @@ def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_m
                 return True
         return False
 
+    def rank_best(zone_id, idle_positions, now):
+        ranked = sorted(
+            range(len(ready_queue[zone_id])),
+            key=lambda i: (
+                priority_fn(
+                    orders_by_id[ready_queue[zone_id][i][0]],
+                    routes[ready_queue[zone_id][i][0]],
+                    ready_queue[zone_id][i][1],
+                    ready_queue[zone_id][i][2],
+                    idle_positions,
+                    now,
+                ),
+                ready_queue[zone_id][i][2],  # tie-break: ready_time
+            ),
+        )
+        if rng is not None and rcl_size > 1 and len(ranked) > 1:
+            return rng.choice(ranked[:rcl_size])
+        return ranked[0]
+
     def try_match(zone_id, now):
         while idle[zone_id] and ready_queue[zone_id]:
             idle_positions = [t.position for t in idle[zone_id]]
-            ranked = sorted(
-                range(len(ready_queue[zone_id])),
-                key=lambda i: (
-                    priority_fn(
-                        orders_by_id[ready_queue[zone_id][i][0]],
-                        routes[ready_queue[zone_id][i][0]],
-                        ready_queue[zone_id][i][1],
-                        ready_queue[zone_id][i][2],
-                        idle_positions,
-                        now,
-                    ),
-                    ready_queue[zone_id][i][2],  # tie-break: ready_time
-                ),
-            )
-            if rng is not None and rcl_size > 1 and len(ranked) > 1:
-                best_ready = rng.choice(ranked[:rcl_size])
-            else:
-                best_ready = ranked[0]
 
-            if lookahead_window > 0:
-                candidate = ready_queue[zone_id][best_ready]
-                best_score = priority_fn(
-                    orders_by_id[candidate[0]], routes[candidate[0]], candidate[1],
-                    candidate[2], idle_positions, now,
+            if zone_id == forced_zone and forced_sequence:
+                step = forced_sequence[0]
+                if step == "WAIT":
+                    forced_sequence.pop(0)
+                    break
+                best_ready = next(
+                    (i for i, cand in enumerate(ready_queue[zone_id]) if (cand[0], cand[1]) == step),
+                    None,
                 )
-                if better_candidate_arriving_soon(zone_id, now, idle_positions, best_score):
-                    break  # defer: leave this transporter idle, a future "ready" event re-triggers try_match
+                if best_ready is not None:
+                    forced_sequence.pop(0)
+                else:
+                    # forced leg isn't actually ready yet - shouldn't normally
+                    # happen if the caller only forces choices it observed as
+                    # available, but fall back to normal decision-making
+                    # rather than silently doing nothing.
+                    best_ready = rank_best(zone_id, idle_positions, now)
+            else:
+                best_ready = rank_best(zone_id, idle_positions, now)
+
+                if lookahead_window > 0:
+                    candidate = ready_queue[zone_id][best_ready]
+                    best_score = priority_fn(
+                        orders_by_id[candidate[0]], routes[candidate[0]], candidate[1],
+                        candidate[2], idle_positions, now,
+                    )
+                    if better_candidate_arriving_soon(zone_id, now, idle_positions, best_score):
+                        break  # defer: leave this transporter idle, a future "ready" event re-triggers try_match
 
             order_id, leg_index, ready_time = ready_queue[zone_id].pop(best_ready)
             route = routes[order_id]
