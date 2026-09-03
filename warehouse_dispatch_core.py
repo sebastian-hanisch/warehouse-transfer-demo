@@ -43,6 +43,24 @@ legs" (a Restricted Candidate List) - the construction phase of GRASP
 (warehouse_dispatch_grasp.py). Left at their defaults (`rng=None`), every
 decision is exactly the old strict-best pick, so baseline/greedy/coordinated
 are completely unaffected - this is purely additive.
+
+Optional `lookahead_window` (default 0.0, disabled) turns every decision
+from strict NON-DELAY dispatch ("a transporter is dispatched the instant
+both it and a ready leg exist") into a bounded DELAY/general schedule: before
+committing to the current best ready leg, `try_match` peeks at the event
+heap for legs that will become ready in this SAME zone within the next
+`lookahead_window` minutes, scores each with `priority_fn` evaluated AT ITS
+OWN future ready time (fair comparison - that's when it would actually be
+served), and if any such candidate scores strictly better than the current
+best ready leg, the transporter is left idle instead of dispatched - it
+gets re-considered automatically once that candidate's own "ready" event
+fires (or sooner, if something else changes first), so the wait is always
+bounded by `lookahead_window` and can never stall the simulation. This is
+what lets a heuristic use "inserted idle time" the way OR-Tools' exact
+solver does (see warehouse_dispatch_coordinated.py's module docstring for
+why non-delay dispatch alone cannot minimize a WEIGHTED objective) - without
+it, no priority function, however good, can ever choose to wait for a more
+valuable job that is about to arrive.
 """
 
 import heapq
@@ -77,7 +95,7 @@ class _TransporterState:
     free_at: float
 
 
-def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_minutes, priority_fn, method_name, rng=None, rcl_size=1):
+def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_minutes, priority_fn, method_name, rng=None, rcl_size=1, lookahead_window=0.0):
     """priority_fn(order, route, leg_index, ready_time, idle_positions, now) ->
     sortable value, lower = served first. idle_positions is the list of node
     ids where the leg's own zone's CURRENTLY idle transporters sit (may be
@@ -106,6 +124,22 @@ def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_m
     ready_queue = {zone_id: [] for zone_id in transporters_per_zone}  # list of (order_id, leg_index, ready_time)
     assignments = []
 
+    def better_candidate_arriving_soon(zone_id, now, idle_positions, best_score):
+        for event_time, _, kind, payload in events:
+            if kind != "ready" or event_time <= now or event_time > now + lookahead_window:
+                continue
+            cand_order_id, cand_leg_index, cand_ready_time = payload
+            cand_leg = routes[cand_order_id].legs[cand_leg_index]
+            if cand_leg.zone_id != zone_id:
+                continue
+            cand_score = priority_fn(
+                orders_by_id[cand_order_id], routes[cand_order_id], cand_leg_index,
+                cand_ready_time, idle_positions, cand_ready_time,
+            )
+            if cand_score < best_score:
+                return True
+        return False
+
     def try_match(zone_id, now):
         while idle[zone_id] and ready_queue[zone_id]:
             idle_positions = [t.position for t in idle[zone_id]]
@@ -127,6 +161,16 @@ def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_m
                 best_ready = rng.choice(ranked[:rcl_size])
             else:
                 best_ready = ranked[0]
+
+            if lookahead_window > 0:
+                candidate = ready_queue[zone_id][best_ready]
+                best_score = priority_fn(
+                    orders_by_id[candidate[0]], routes[candidate[0]], candidate[1],
+                    candidate[2], idle_positions, now,
+                )
+                if better_candidate_arriving_soon(zone_id, now, idle_positions, best_score):
+                    break  # defer: leave this transporter idle, a future "ready" event re-triggers try_match
+
             order_id, leg_index, ready_time = ready_queue[zone_id].pop(best_ready)
             route = routes[order_id]
             leg = route.legs[leg_index]

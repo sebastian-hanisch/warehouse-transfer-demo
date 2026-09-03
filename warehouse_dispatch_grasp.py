@@ -15,6 +15,24 @@ dispatching-rule pass can do, since a later construction can "undo" an
 earlier greedy choice that turned out costly, something ATCS itself never
 gets a chance to do.
 
+Look-ahead (added 2026-09-03): every `simulate_dispatch` call here (both
+construction and local search) also passes `lookahead_window=LOOKAHEAD_WINDOW`.
+Verified directly on real OR-Tools solutions that this targets a genuine,
+provable source of the gap: 6 of 37 proven-OPTIMAL CP-SAT solutions checked
+on a hub-bottleneck instance left the sole hub transporter idle for a moment
+even though a leg was already ready and waiting ("inserted idle time" -  a
+classical, well-known reason non-delay schedules can be suboptimal for a
+WEIGHTED objective like this one's). `simulate_dispatch`'s own non-delay
+loop can never do that on its own - every decision dispatches immediately
+whenever both a transporter and a ready leg exist. `lookahead_window` lets
+it defer: before committing to the current best ready leg, it peeks at legs
+that will become ready in this zone within the window, and if one of them
+scores better under the SAME priority function (evaluated at ITS OWN future
+ready time), the transporter is left idle instead - it gets reconsidered
+automatically once that leg's own "ready" event fires, so the wait is always
+bounded and can never stall. See warehouse_dispatch_core.py's module
+docstring for the mechanism itself.
+
 Local search: starting from the best constructed schedule, a bounded number
 of random single-leg perturbations are tried. Each one adds a random bias to
 ONE leg's priority (nudging it earlier or later relative to whatever else it
@@ -24,7 +42,14 @@ automatic because a bias only ever changes WHICH ready leg wins a tie, never
 the simulator's own precedence/capacity mechanics. A perturbation is kept
 only if it improves the objective, otherwise reverted - greedy/randomized
 hill-climbing, not simulated annealing; no acceptance criterion for worse
-moves, the perturbation budget here is too small to need one.
+moves, the perturbation budget here is too small to need one. (A more
+sophisticated swap-based local search + Iterated Local Search shake-and-
+restart was tried as a REPLACEMENT for this - see git history/project
+memory - and reverted: no consistent net improvement over this simpler
+design, at roughly double the runtime. The look-ahead addition above is a
+different, unrelated axis - it changes WHEN a transporter is dispatched,
+not which candidate wins - and stacks additively with this local search
+rather than competing with it.)
 
 Objective: NOT total lead time (the app's headline KPI), but the SAME
 weighted-completion-time + tardiness objective OR-Tools actually minimizes
@@ -53,6 +78,15 @@ GRASP_ITERATIONS = 150
 RCL_SIZE = 4
 LOCAL_SEARCH_MOVES = 400
 BIAS_SCALE = 0.5  # fraction of p_bar a single perturbation can shift one leg's priority by
+
+# Swept separately (0.0-2.0 minutes) on top of the above, same 4 families x
+# 15 seeds: 0.75 min consistently pushed gap-closure from 14-33% to 25-39%
+# in EVERY family (never a regression, unlike most windows tested alone on
+# plain Koordiniert without GRASP's construction/local-search diversity
+# underneath it) - runtime rises to ~3.9s at the sliders' absolute maximum
+# (from ~2s), still acceptable to run inline. Windows above ~1.5 start
+# giving some of the gain back (too much unjustified waiting).
+LOOKAHEAD_WINDOW = 0.75
 
 
 def _atcs_index(order, route, leg_index, idle_positions, now, network, handover_minutes, p_bar):
@@ -123,7 +157,7 @@ def dispatch_grasp(network, routes, orders, transporters_per_zone, handover_minu
         priority = _make_priority(network, handover_minutes, p_bar, {})
         schedule = simulate_dispatch(
             network, routes, orders, transporters_per_zone, handover_minutes, priority, "grasp",
-            rng=rng, rcl_size=RCL_SIZE,
+            rng=rng, rcl_size=RCL_SIZE, lookahead_window=LOOKAHEAD_WINDOW,
         )
         score = _objective(schedule, routes, orders, handover_minutes)
         if score < best_score:
@@ -138,7 +172,10 @@ def dispatch_grasp(network, routes, orders, transporters_per_zone, handover_minu
         bias[key] = rng.uniform(-BIAS_SCALE * p_bar, BIAS_SCALE * p_bar)
 
         priority = _make_priority(network, handover_minutes, p_bar, bias)
-        candidate = simulate_dispatch(network, routes, orders, transporters_per_zone, handover_minutes, priority, "grasp")
+        candidate = simulate_dispatch(
+            network, routes, orders, transporters_per_zone, handover_minutes, priority, "grasp",
+            lookahead_window=LOOKAHEAD_WINDOW,
+        )
         score = _objective(candidate, routes, orders, handover_minutes)
         if score < best_score:
             best_score, best_schedule = score, candidate

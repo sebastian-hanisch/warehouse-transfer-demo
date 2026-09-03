@@ -82,6 +82,23 @@ derselben Kennzahlen-Berechnung ausgewertet:
   Regler-Obergrenzen; ein größeres Budget (300/800) brachte nur noch marginal mehr bei
   etwa doppelter Laufzeit. Läuft, wie die anderen drei eigenen Verfahren, inline ohne
   Button/Cooldown.
+
+  **Zusätzlich ein Lookahead-Fenster** (`lookahead_window` in `simulate_dispatch`,
+  0,75 min): der Simulator selbst dispatcht sonst immer sofort, sobald Transporter UND
+  ein bereiter Leg existieren (Non-Delay) – vor jeder Zuweisung prüft GRASP jetzt
+  zusätzlich, ob innerhalb des Fensters ein deutlich dringenderer Leg bereit wird, und
+  lässt den Transporter dafür bewusst kurz stehen ("eingefügte Leerzeit"). Direkt an
+  echten OR-Tools-Lösungen verifiziert, dass das kein Kunstgriff ist: 6 von 37
+  nachweislich optimalen CP-SAT-Lösungen an einem Hub-Engpass-Szenario lassen den
+  einzigen Hub-Transporter genau so bewusst leer stehen – ein klassisches Resultat der
+  Scheduling-Theorie (bei einer gewichteten Zielgröße ist die optimale Lösung nicht
+  immer ein Non-Delay-Schedule). Geschweept (0–2 min, dieselben 4 Familien × 15 Seeds):
+  0,75 min schließt jetzt **25–39 %** der Lücke zu OR-Tools statt 14–33 %, in jeder
+  Familie, bei bis zu ~3,9 s Laufzeit an den Regler-Obergrenzen. Ein separater Versuch,
+  stattdessen die Lokalsuche selbst durch echte Swap-Züge + Iterated Local Search zu
+  ersetzen, brachte keine verlässliche Verbesserung bei fast doppelter Laufzeit und
+  wurde wieder verworfen – das Lookahead-Fenster wirkt auf einer unabhängigen Achse
+  (WANN disponiert wird, nicht WELCHER Kandidat gewinnt).
 - **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer. Da die
   Repositionierungszeit davon abhängt, WELCHER Transporter einen Leg übernimmt, bekommt
   jeder Leg eine Maschinen-Variable (welcher der $c_z$ Transporter der Zone), und für
@@ -138,7 +155,7 @@ gesetzte Prioritäten in der Praxis oft schlicht nicht respektiert.
 | `warehouse_network.py` | Hub-and-Spoke-Lagergraph (networkx) |
 | `warehouse_demand.py` | Auftragsgenerierung |
 | `warehouse_routing.py` | Zonen-Pfad je Auftrag (Legs) |
-| `warehouse_dispatch_core.py` | Gemeinsamer Discrete-Event-Simulator für alle vier eigenen Verfahren, inkl. Transporter-Positionstracking, Repositionierung und optionaler RCL-Randomisierung für GRASP |
+| `warehouse_dispatch_core.py` | Gemeinsamer Discrete-Event-Simulator für alle vier eigenen Verfahren, inkl. Transporter-Positionstracking, Repositionierung sowie optionaler RCL-Randomisierung und Lookahead-Fenster (eingefügte Leerzeit) für GRASP |
 | `warehouse_dispatch_baseline.py` / `_greedy.py` / `_coordinated.py` | Die drei Prioritätsregeln (FCFS / lokales SPT / ATCS-Index) |
 | `warehouse_dispatch_grasp.py` | GRASP: randomisierte ATCS-Konstruktion (RCL) + lokale Suche (Ein-Leg-Prioritätsstörungen), baut auf `_coordinated.py`s ATCS-Formel auf |
 | `warehouse_ortools_solver.py` | CP-SAT-Modell (Maschinen-Zuordnung, sequenzabhängige Repositionierungszeiten, Verspätungsstrafe) |

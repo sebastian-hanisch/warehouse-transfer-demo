@@ -70,13 +70,28 @@ Entscheidung und überdenkt sie nie wieder - GRASP baut viele randomisierte
 ATCS-Varianten (dieselbe Formel, aber pro Entscheidung zufällig aus den besten
 RCL_SIZE Kandidaten statt immer strikt dem besten gewählt), behält die beste, und
 verbessert sie anschließend mit lokaler Suche (zufällige Ein-Leg-Störungen, nur
-behalten wenn sie das Zielmaß verbessern). Gemessen auf demselben Zielwert, den
-OR-Tools tatsächlich minimiert (gewichtete Fertigstellungszeit + Verspätung, nicht die
-angezeigte Gesamtdurchlaufzeit) - geschweept über 4 Szenario-Familien x 15 Seeds:
-schlägt Koordiniert fast immer (0-1 Verluste je Familie) und schließt 14-33% der
-verbleibenden Lücke zu OR-Tools, bei bis zu ~2s Laufzeit am oberen Ende der Regler -
-schnell genug, um wie die anderen drei eigenen Verfahren direkt mitzulaufen, ganz ohne
-Button/Cooldown wie bei OR-Tools.
+behalten wenn sie das Zielmaß verbessern). Direkt am OR-Tools-Ergebnis nachgeprüft,
+WARUM überhaupt noch eine Lücke bleibt: in 6 von 37 nachweislich optimalen
+CP-SAT-Lösungen an einem Hub-Engpass lässt der Solver den einzigen
+Hub-Transporter bewusst kurz leer stehen, obwohl schon ein Auftrag bereitstand -
+"eingefügte Leerzeit", ein klassischer Grund, warum ein Non-Delay-Verfahren (immer
+sofort disponieren, sobald möglich) bei einer GEWICHTETEN Zielgröße strukturell nicht
+mithalten kann. GRASP bekam deshalb zusätzlich ein Lookahead-Fenster
+(`lookahead_window`, 0,75 Minuten): vor jeder Zuweisung ein kurzer Blick, ob in diesem
+Fenster ein deutlich dringenderer Leg bereit wird - wenn ja, bleibt der Transporter
+bewusst noch kurz stehen, statt sofort zu disponieren. Gemessen auf demselben
+Zielwert, den OR-Tools tatsächlich minimiert (gewichtete Fertigstellungszeit +
+Verspätung, nicht die angezeigte Gesamtdurchlaufzeit) - geschweept über 4
+Szenario-Familien x 15 Seeds: schließt jetzt 25-39% der verbleibenden Lücke zu
+OR-Tools (vorher, ohne Lookahead: 14-33%), bei bis zu ~3,9s Laufzeit am oberen Ende
+der Regler - noch akzeptabel, um wie die anderen drei eigenen Verfahren direkt
+mitzulaufen, ganz ohne Button/Cooldown wie bei OR-Tools. Ein alternativer Versuch,
+stattdessen die lokale Suche selbst durch echte Swap-Züge plus Iterated-Local-Search
+zu ersetzen, brachte dagegen KEINE verlässliche Verbesserung bei fast doppelter
+Laufzeit und wurde wieder verworfen (siehe Git-Historie von
+`warehouse_dispatch_grasp.py`) - das Lookahead-Fenster wirkt auf einer ganz anderen,
+unabhängigen Achse (WANN disponiert wird, nicht WELCHER Kandidat gewinnt) und ist
+deshalb kein Widerspruch zu diesem negativen Befund.
 
 Ein Anteil der Aufträge kann als Express markiert werden (engere Frist). Nur Koordiniert
 (EXPRESS_WEIGHT als Gewicht im ATCS-Index) und OR-Tools (dasselbe EXPRESS_WEIGHT im
@@ -679,10 +694,16 @@ Signal nutzt. Koordiniert und OR-Tools tun das dagegen aktiv (Details unten je V
   simuliert und nur behalten, wenn sie das Zielmaß verbessert. Anders als die anderen
   drei Verfahren trifft GRASP nicht EINE Entscheidung pro Ereignis, sondern probiert
   viele komplette Pläne durch - das kann eine frühere ATCS-Entscheidung im Rückblick
-  revidieren, was ATCS selbst strukturell nie kann. Gemessen am Zielwert, den auch
-  OR-Tools minimiert (gewichtete Fertigstellungszeit + Verspätung): schlägt Koordiniert
-  fast immer und schließt einen Teil (geschweept: 14-33%) der verbleibenden Lücke zu
-  OR-Tools, bei bis zu ~2s Laufzeit am oberen Ende der Regler.
+  revidieren, was ATCS selbst strukturell nie kann. Zusätzlich ein Lookahead-Fenster
+  (0,75 min): vor jeder Zuweisung ein kurzer Blick, ob gleich ein deutlich
+  dringenderer Leg bereit wird - wenn ja, bleibt der Transporter bewusst noch kurz
+  stehen ("eingefügte Leerzeit"), statt sofort zu disponieren. Das adressiert direkt
+  einen nachgeprüften Grund für die Lücke: 6 von 37 nachweislich optimalen
+  OR-Tools-Lösungen an einem Hub-Engpass lassen den Transporter genau so bewusst
+  leer stehen. Gemessen am Zielwert, den auch OR-Tools minimiert (gewichtete
+  Fertigstellungszeit + Verspätung): schlägt Koordiniert fast immer und schließt
+  einen Teil (geschweept: 25-39%, ohne Lookahead nur 14-33%) der verbleibenden
+  Lücke zu OR-Tools, bei bis zu ~3,9s Laufzeit am oberen Ende der Regler.
 - **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer. Weil Repositionierung
   davon abhängt, WELCHER Transporter einen Leg übernimmt, sind Transporter hier keine
   anonyme Kapazität mehr wie zuvor ohne Repositionierung: jeder Leg bekommt eine
@@ -831,6 +852,30 @@ schließen" auf der Größe gemessen ist, die OR-Tools tatsächlich minimiert. G
 LOCAL_SEARCH_MOVES=400: schlägt Koordiniert auf fast jedem Seed und schließt 14-33% der
 Lücke zu OR-Tools, bei bis zu ~2s Laufzeit an den Regler-Obergrenzen - ein größeres Budget
 (300/800) brachte in der Sweep-Messung nur noch marginal mehr bei etwa doppelter Laufzeit.
+
+Zusätzlich bekommt jeder `simulate_dispatch`-Aufruf in GRASP ein Lookahead-Fenster
+`lookahead_window` (0,75 min): $I(o,\ell)$ (bzw. $-I(o,\ell)+b_{o,\ell}$) entscheidet
+weiterhin, WELCHER bereite Leg gewinnt - aber vor jeder Zuweisung prüft die Simulation
+zusätzlich, ob innerhalb des Fensters ein Leg bereit wird, dessen Wert (bewertet zu
+SEINER eigenen künftigen Bereitzeit) den aktuell besten bereiten Leg schlägt. Wenn ja,
+bleibt der Transporter bewusst stehen, statt sofort zu disponieren - der Simulator
+selbst dispatcht sonst immer sofort (Non-Delay), sobald Transporter UND ein bereiter
+Leg existieren, und kann daher von sich aus nie "warten". Direkt an echten
+OR-Tools-Lösungen nachgeprüft, dass das kein Kunstgriff ist: 6 von 37 nachweislich
+optimalen CP-SAT-Lösungen an einem Hub-Engpass-Szenario lassen den einzigen
+Hub-Transporter bewusst leer stehen, obwohl schon ein Auftrag bereitstand -
+"eingefügte Leerzeit" (inserted idle time), ein klassisches Ergebnis der
+Scheduling-Theorie: bei einer GEWICHTETEN Zielgröße ist die optimale Lösung nicht
+immer ein Non-Delay-Schedule. Geschweept (0-2 min Fensterbreite, dieselben 4
+Szenario-Familien x 15 Seeds): 0,75 min schließt jetzt 25-39% der Lücke zu OR-Tools
+(vorher, ohne Fenster: 14-33%) in JEDER Familie, bei bis zu ~3,9s Laufzeit an den
+Regler-Obergrenzen - größere Fenster (ab ca. 1,5 min) geben einen Teil des Gewinns
+wieder her (zu viel unbegründetes Warten). Ein separater Versuch, stattdessen die
+Lokalsuche selbst durch echte Swap-Züge einer Rangfolge je Zone plus Iterated Local
+Search (Shake-and-Restart) zu ersetzen, brachte KEINE verlässliche Verbesserung bei
+fast doppelter Laufzeit und wurde wieder verworfen - das Lookahead-Fenster wirkt auf
+einer unabhängigen Achse (WANN disponiert wird, nicht WELCHER Kandidat gewinnt) und
+steht dazu nicht im Widerspruch.
 """
     )
 
