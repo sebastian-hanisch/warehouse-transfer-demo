@@ -66,23 +66,33 @@ Optional `forced_zone`/`forced_sequence` replay a SPECIFIC known prefix of
 decisions for one zone instead of letting priority_fn (+ RCL/lookahead)
 decide them: `forced_sequence` is a list, consumed from the front, of
 either `(order_id, leg_index)` (dispatch exactly this leg next in
-`forced_zone`, bypassing priority_fn entirely) or the sentinel `"WAIT"`
-(defer once, exactly like a lookahead defer, unconditionally). Once the
-list is exhausted, `forced_zone` reverts to normal priority_fn(+RCL+
+`forced_zone`) or the sentinel `"WAIT"` (defer once, unconditionally - used
+when the CALLER wants a deliberate pause the simulator couldn't otherwise
+infer). If the next forced `(order_id, leg_index)` hasn't become ready yet,
+the transporter is held idle (not substituted with something else) until
+it does - `try_match` runs again on this zone's next event, so this
+naturally reproduces however much real "inserted idle time" the forced
+sequence implies without needing explicit WAIT tokens for that case. Once
+the list is exhausted, `forced_zone` reverts to normal priority_fn(+RCL+
 lookahead) behavior for the rest of the run - "prefix forced, remainder is
 a baseline rollout", letting a caller ask "what would the FINAL schedule
-look like if zone Z's 3rd decision went to leg X instead" without a much
-more invasive generator/resumable rewrite of this event loop.
+look like if zone Z's decisions instead followed THIS exact order" without
+a much more invasive generator/resumable rewrite of this event loop.
 
-Built for a single-zone monotonic-beam-search prototype (explore
-"dispatch vs. wait" branches at each of one zone's decisions, score each
-full resulting schedule) that was tried and did NOT pay off - lost to
-GRASP on every seed tested, see project memory for the numbers and the
-"why" (narrower scope than GRASP - only one zone improved - and a noisier,
-more expensive branch-discovery process, for comparable total runtime).
-Kept anyway since the mechanism itself is small, self-contained, and
-backward-compatible (default `None`, zero effect on existing callers) -
-useful groundwork if a future, better-scoped search idea needs it again.
+Built for a single-zone monotonic-beam-search prototype that was tried and
+did NOT pay off (lost to GRASP on every seed tested - narrower scope than
+GRASP, only one zone improved, plus a noisy branch-discovery process; see
+project memory). Reused and refined (the idle-instead-of-substitute
+fallback above was added for it) for a second prototype - re-solving one
+zone's dispatch EXACTLY via a small CP-SAT sub-model, given ready times
+from an already-computed heuristic schedule, then replaying the exact
+sequence here - that ALSO did not pay off (0/20 seeds improved over plain
+ATCS or GRASP, see project memory for why: a zone-local exact re-solve
+can't rediscover the kind of "inserted idle time" benefit that depends on
+information from OTHER zones, which the decomposition necessarily hides).
+Kept anyway - small, self-contained, backward-compatible - as groundwork
+should a future idea need "replay a known prefix, rest is a baseline
+rollout" again.
 """
 
 import heapq
@@ -197,11 +207,14 @@ def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_m
                 if best_ready is not None:
                     forced_sequence.pop(0)
                 else:
-                    # forced leg isn't actually ready yet - shouldn't normally
-                    # happen if the caller only forces choices it observed as
-                    # available, but fall back to normal decision-making
-                    # rather than silently doing nothing.
-                    best_ready = rank_best(zone_id, idle_positions, now)
+                    # the forced leg hasn't become ready yet - hold this
+                    # transporter idle rather than substituting a different
+                    # leg; try_match runs again on this zone's next event, so
+                    # this naturally waits exactly as long as needed (no
+                    # explicit "WAIT" tokens required for this case, unlike
+                    # deferring for a reason the caller can't already see
+                    # coming, e.g. lookahead below).
+                    break
             else:
                 best_ready = rank_best(zone_id, idle_positions, now)
 
