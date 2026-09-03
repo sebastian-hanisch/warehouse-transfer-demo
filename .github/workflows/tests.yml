@@ -23,4 +23,4 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Tests ausführen
-        run: pytest tests/ -v --durations=10
+        run: python -m pytest tests/ -v --durations=10
