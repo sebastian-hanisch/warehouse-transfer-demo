@@ -100,11 +100,13 @@ ORTOOLS_COOLDOWN_BUFFER_SECONDS = 3
 METHOD_BASELINE = "baseline"
 METHOD_GREEDY = "greedy"
 METHOD_COORDINATED = "coordinated"
+METHOD_GRASP = "grasp"
 METHOD_ORTOOLS = "ortools"
 
 METHOD_LABELS = {
     METHOD_BASELINE: "Unoptimiert (FCFS)",
     METHOD_GREEDY: "Dezentral je Zone (Greedy)",
     METHOD_COORDINATED: "Koordiniert (eigene Heuristik)",
+    METHOD_GRASP: "GRASP (Metaheuristik)",
     METHOD_ORTOOLS: "OR-Tools (CP-SAT)",
 }

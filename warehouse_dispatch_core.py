@@ -36,6 +36,13 @@ repositioning in (coordinated does; baseline/greedy ignore the argument by
 design). Once a leg is chosen, the transporter requiring the LEAST
 repositioning to reach it is picked (ties broken by whichever has been idle
 longest) - a standard, realistic nearest-vehicle dispatch rule.
+
+Optional `rng`/`rcl_size` turn a decision from "always the single best
+ready leg" into "uniformly random among the RCL_SIZE best-ranked ready
+legs" (a Restricted Candidate List) - the construction phase of GRASP
+(warehouse_dispatch_grasp.py). Left at their defaults (`rng=None`), every
+decision is exactly the old strict-best pick, so baseline/greedy/coordinated
+are completely unaffected - this is purely additive.
 """
 
 import heapq
@@ -70,7 +77,7 @@ class _TransporterState:
     free_at: float
 
 
-def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_minutes, priority_fn, method_name):
+def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_minutes, priority_fn, method_name, rng=None, rcl_size=1):
     """priority_fn(order, route, leg_index, ready_time, idle_positions, now) ->
     sortable value, lower = served first. idle_positions is the list of node
     ids where the leg's own zone's CURRENTLY idle transporters sit (may be
@@ -79,7 +86,11 @@ def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_m
     candidate compared in the same try_match call, unlike ready_time which
     differs per candidate) - needed for rules like ATCS that measure slack
     relative to "right now", not to whenever this particular leg happened
-    to become ready."""
+    to become ready.
+
+    rng/rcl_size: with rng given and rcl_size > 1, each decision picks
+    uniformly at random among the rcl_size best-ranked ready legs instead of
+    strictly the best one - see module docstring."""
     seq = itertools.count()
     events = []  # heap of (time, seq, kind, payload)
     orders_by_id = {o.order_id: o for o in orders}
@@ -98,7 +109,7 @@ def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_m
     def try_match(zone_id, now):
         while idle[zone_id] and ready_queue[zone_id]:
             idle_positions = [t.position for t in idle[zone_id]]
-            best_ready = min(
+            ranked = sorted(
                 range(len(ready_queue[zone_id])),
                 key=lambda i: (
                     priority_fn(
@@ -112,6 +123,10 @@ def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_m
                     ready_queue[zone_id][i][2],  # tie-break: ready_time
                 ),
             )
+            if rng is not None and rcl_size > 1 and len(ranked) > 1:
+                best_ready = rng.choice(ranked[:rcl_size])
+            else:
+                best_ready = ranked[0]
             order_id, leg_index, ready_time = ready_queue[zone_id].pop(best_ready)
             route = routes[order_id]
             leg = route.legs[leg_index]

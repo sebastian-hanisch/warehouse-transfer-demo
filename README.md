@@ -34,7 +34,7 @@ beide Sichtweisen dieselbe zugrunde liegende Kombinatorik beschreiben.
 Der Fokus der Demo: **lokal optimale Disposition je Zone erzeugt an Umschlagpunkten
 Wartezeit und schickt Transporter unnötig durchs Lager – beides pflanzt sich
 kaskadenartig fort** – und eine zonenübergreifend koordinierte Disposition vermeidet
-das systematisch. Hauptkriterium für alle vier Verfahren ist dabei die
+das systematisch. Hauptkriterium für alle fünf Verfahren ist dabei die
 **Gesamtdurchlaufzeit**: Umstiegs-Wartezeit und Repositionierung sind keine eigenen
 Ziele, sondern Ursachen, die sich in dieser einen Zahl niederschlagen und in der App
 nur noch als Aufschlüsselung erklärt werden, woraus sie sich zusammensetzt. Koordiniert
@@ -42,7 +42,7 @@ und OR-Tools blenden zusätzlich einen kleinen Verspätungs-/Dringlichkeitsterm 
 (siehe unten) – Pünktlichkeit bleibt dabei ein mitgewichteter Nebenaspekt derselben
 Zielfunktion, kein zweites, gleichrangiges Ziel.
 
-Vier Dispositionsverfahren im direkten Vergleich, alle auf demselben Lagergraphen und mit
+Fünf Dispositionsverfahren im direkten Vergleich, alle auf demselben Lagergraphen und mit
 derselben Kennzahlen-Berechnung ausgewertet:
 
 - **Unoptimiert (FCFS):** keine Prioritätslogik, wer zuerst bereit ist, wird zuerst bedient.
@@ -65,6 +65,23 @@ derselben Kennzahlen-Berechnung ausgewertet:
   Szenario-Familie, nicht nur einigen – $K_1{=}1{,}0$, $K_2{=}0{,}15$, ebenfalls geschweept
   (schwache Rüstzeit-Dämpfung, also großes $K_2$, verlor gegen Greedy in bis zu 33 von 40
   Szenarien).
+- **GRASP:** Greedy Randomized Adaptive Search Procedure (Feo/Resende 1989/1995), gebaut
+  direkt auf Koordiniert's ATCS-Index statt ihn zu ersetzen. Konstruktion: dieselbe
+  ATCS-Formel, aber jede Dispositionsentscheidung wählt zufällig aus den `RCL_SIZE`
+  bestbewerteten bereiten Legs (Restricted Candidate List) statt strikt dem besten –
+  `GRASP_ITERATIONS` unabhängige, randomisierte Simulationsläufe, der beste wird
+  behalten. Lokale Suche danach: bis zu `LOCAL_SEARCH_MOVES` zufällige Ein-Leg-Störungen
+  der Priorität, jede neu simuliert, nur behalten bei Verbesserung. Anders als die
+  anderen drei Heuristiken trifft GRASP nicht eine Entscheidung pro Ereignis, sondern
+  probiert viele komplette Pläne durch und kann eine frühere ATCS-Entscheidung im
+  Rückblick revidieren – etwas, das ATCS selbst strukturell nie kann. Bewertet auf
+  demselben Zielwert, den auch OR-Tools minimiert (gewichtete Fertigstellungszeit +
+  Verspätung, nicht die angezeigte Gesamtdurchlaufzeit) – geschweept über 4
+  Szenario-Familien x 15 Seeds bei 150/4/400: schlägt Koordiniert fast immer und schließt
+  14–33 % der verbleibenden Lücke zu OR-Tools, bei bis zu ~2 s Laufzeit an den
+  Regler-Obergrenzen; ein größeres Budget (300/800) brachte nur noch marginal mehr bei
+  etwa doppelter Laufzeit. Läuft, wie die anderen drei eigenen Verfahren, inline ohne
+  Button/Cooldown.
 - **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer. Da die
   Repositionierungszeit davon abhängt, WELCHER Transporter einen Leg übernimmt, bekommt
   jeder Leg eine Maschinen-Variable (welcher der $c_z$ Transporter der Zone), und für
@@ -99,7 +116,7 @@ gesetzte Prioritäten in der Praxis oft schlicht nicht respektiert.
   keine Pauschale. Im Gantt-Chart als helle, schraffierte Balken vor dem eigentlichen Leg
   sichtbar.
 - Kern-Kennzahl für den Vergleich ist die **Gesamtdurchlaufzeit** – das Hauptkriterium,
-  nach dem alle vier Verfahren disponieren und verglichen werden. Umstiegs-Wartezeit und
+  nach dem alle fünf Verfahren disponieren und verglichen werden. Umstiegs-Wartezeit und
   Repositionierung tauchen nur noch in einer Aufschlüsselung (gestapeltes Balkendiagramm:
   reine Fahrzeit / feste Umstiegszeit / Warten) als Erklärung auf, woraus sich diese eine
   Zahl zusammensetzt – nicht mehr als eigene KPI-Kachel oder eigenes Vergleichschart.
@@ -121,8 +138,9 @@ gesetzte Prioritäten in der Praxis oft schlicht nicht respektiert.
 | `warehouse_network.py` | Hub-and-Spoke-Lagergraph (networkx) |
 | `warehouse_demand.py` | Auftragsgenerierung |
 | `warehouse_routing.py` | Zonen-Pfad je Auftrag (Legs) |
-| `warehouse_dispatch_core.py` | Gemeinsamer Discrete-Event-Simulator für die drei eigenen Verfahren, inkl. Transporter-Positionstracking und Repositionierung |
+| `warehouse_dispatch_core.py` | Gemeinsamer Discrete-Event-Simulator für alle vier eigenen Verfahren, inkl. Transporter-Positionstracking, Repositionierung und optionaler RCL-Randomisierung für GRASP |
 | `warehouse_dispatch_baseline.py` / `_greedy.py` / `_coordinated.py` | Die drei Prioritätsregeln (FCFS / lokales SPT / ATCS-Index) |
+| `warehouse_dispatch_grasp.py` | GRASP: randomisierte ATCS-Konstruktion (RCL) + lokale Suche (Ein-Leg-Prioritätsstörungen), baut auf `_coordinated.py`s ATCS-Formel auf |
 | `warehouse_ortools_solver.py` | CP-SAT-Modell (Maschinen-Zuordnung, sequenzabhängige Repositionierungszeiten, Verspätungsstrafe) |
 | `warehouse_evaluation.py` | Gemeinsame KPI-Berechnung inkl. Fristberechnung (`due_time_for_order`) |
 | `warehouse_visualization.py` | Lagerschema, Gantt-Chart, Animation, KPI-Vergleich |

@@ -8,10 +8,12 @@ import pytest
 from conftest import build_scenario
 from warehouse_dispatch_baseline import dispatch_baseline
 from warehouse_dispatch_coordinated import dispatch_coordinated
+from warehouse_dispatch_grasp import _objective as grasp_objective
+from warehouse_dispatch_grasp import dispatch_grasp
 from warehouse_dispatch_greedy import dispatch_greedy
 from warehouse_evaluation import evaluate_schedule
 
-DISPATCHERS = [dispatch_baseline, dispatch_greedy, dispatch_coordinated]
+DISPATCHERS = [dispatch_baseline, dispatch_greedy, dispatch_coordinated, dispatch_grasp]
 HANDOVER = 1.0
 
 
@@ -207,4 +209,29 @@ def test_coordinated_improves_express_on_time_rate_vs_greedy():
             losses += 1
 
     assert wins > losses
+    assert losses <= n_seeds * 0.2
+
+
+def test_grasp_does_not_lose_to_coordinated_on_its_own_objective():
+    """GRASP (warehouse_dispatch_grasp.py) explicitly targets the SAME
+    weighted-completion-time + tardiness objective OR-Tools minimizes, not
+    the app's headline lead-time KPI - so it's checked against coordinated
+    on THAT objective here, swept over seeds rather than trusting one
+    instance (this project's standing convention - a heuristic-tuning claim
+    that looked right on a hand-picked example has been wrong before, see
+    warehouse_dispatch_coordinated.py's own history). GRASP's construction
+    is randomized, so an occasional single-seed loss is expected noise (0-1
+    losses per 15-seed family when this was last swept), not a regression to
+    chase to zero."""
+    n_seeds = 15
+    losses = 0
+    for seed in range(n_seeds):
+        net, orders, routes, transporters_per_zone = build_scenario(seed=seed)
+        coordinated_schedule = dispatch_coordinated(net, routes, orders, transporters_per_zone, HANDOVER)
+        grasp_schedule = dispatch_grasp(net, routes, orders, transporters_per_zone, HANDOVER, seed=seed)
+        coordinated_obj = grasp_objective(coordinated_schedule, routes, orders, HANDOVER)
+        grasp_obj = grasp_objective(grasp_schedule, routes, orders, HANDOVER)
+        if grasp_obj > coordinated_obj + 1e-6:
+            losses += 1
+
     assert losses <= n_seeds * 0.2

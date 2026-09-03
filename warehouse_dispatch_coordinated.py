@@ -57,10 +57,14 @@ from warehouse_evaluation import due_time_for_order
 ATCS_K1 = 1.0  # due-date look-ahead scale
 ATCS_K2 = 0.15  # setup-time (repositioning) look-ahead scale
 
-_MIN_LEG_TIME = 1e-6  # guards the w/p division; real legs are never this short
+# Not underscore-private: warehouse_dispatch_grasp.py imports these three to
+# build its construction-phase priority on the exact same ATCS formula
+# (single source of truth - the alternative, re-deriving the formula in the
+# GRASP module, risks silent drift between the two).
+MIN_LEG_TIME = 1e-6  # guards the w/p division; real legs are never this short
 
 
-def _future_work(route, leg_index, handover_minutes):
+def future_work(route, leg_index, handover_minutes):
     """Total remaining travel time + handovers AFTER the current leg."""
     remaining_legs = route.legs[leg_index + 1 :]
     if not remaining_legs:
@@ -69,18 +73,18 @@ def _future_work(route, leg_index, handover_minutes):
     return travel + len(remaining_legs) * handover_minutes
 
 
-def _average_leg_travel_time(routes):
+def average_leg_travel_time(routes):
     travels = [leg.travel_time for route in routes.values() for leg in route.legs]
-    return max(sum(travels) / len(travels), _MIN_LEG_TIME) if travels else 1.0
+    return max(sum(travels) / len(travels), MIN_LEG_TIME) if travels else 1.0
 
 
 def dispatch_coordinated(network, routes, orders, transporters_per_zone, handover_minutes):
-    p_bar = _average_leg_travel_time(routes)
+    p_bar = average_leg_travel_time(routes)
 
     def priority(order, route, leg_index, ready_time, idle_positions, now):
         leg = route.legs[leg_index]
-        p = max(leg.travel_time, _MIN_LEG_TIME)
-        future = _future_work(route, leg_index, handover_minutes)
+        p = max(leg.travel_time, MIN_LEG_TIME)
+        future = future_work(route, leg_index, handover_minutes)
         nearest_transporter = min(
             (network.travel_time(leg.zone_id, position, leg.entry_node) for position in idle_positions),
             default=0.0,

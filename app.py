@@ -29,12 +29,14 @@ einzeln mit Position geführt (nicht nur als Kapazitätszahl) - wer gerade abgel
 hat, muss leer zum nächsten Einsatzort fahren (Repositionierung), genau wie ein echtes
 Shuttle/AGV.
 
-Vier Dispositionsverfahren im Vergleich: Unoptimiert (FCFS), Dezentral je Zone
+Fünf Dispositionsverfahren im Vergleich: Unoptimiert (FCFS), Dezentral je Zone
 (Greedy: lokales SPT je Leg, blind für Repositionierungskosten), Koordiniert (ATCS -
 Apparent Tardiness Cost with Setups, eine literaturbekannte Dispatching-Regel aus der
 Scheduling-Forschung für genau diese Problemstruktur: parallele Maschinen mit
-sequenzabhängigen Rüstzeiten und Fristen) und OR-Tools (CP-SAT mit sequenzabhängigen
-Rüstzeiten je Transporter). HAUPTKRITERIUM für alle vier Verfahren ist die
+sequenzabhängigen Rüstzeiten und Fristen), GRASP (Greedy Randomized Adaptive Search
+Procedure - randomisierte ATCS-Konstruktionen plus lokale Suche, siehe unten) und
+OR-Tools (CP-SAT mit sequenzabhängigen Rüstzeiten je Transporter). HAUPTKRITERIUM für
+alle fünf Verfahren ist die
 Gesamtdurchlaufzeit (Summe aller Auftrags-Durchlaufzeiten) - Umstiegs-Wartezeit und
 Repositionierung sind keine eigenen Ziele, sondern Ursachen, die sich in der
 Gesamtdurchlaufzeit niederschlagen; sie tauchen in der App nur noch als Erklärung auf,
@@ -60,6 +62,21 @@ Zeitpuffer, Rüstzeit/Repositionierung), aber als eine publizierte Formel mit
 exponentieller Abklingfunktion statt drei linearer Gewichte, geschweept über dieselben
 Szenario-Familien: schlägt die alte Version bei der Gesamtverspätung in JEDER
 getesteten Szenario-Familie, nicht nur manchen.
+
+Seit 2026-09-03 ergänzt um GRASP (`warehouse_dispatch_grasp.py`), als Antwort auf die
+Frage, ob die verbleibende Lücke zur OR-Tools-Lösung mit Literaturansätzen jenseits
+einer einzelnen Dispatching-Regel schrumpfen lässt. ATCS trifft pro Ereignis genau EINE
+Entscheidung und überdenkt sie nie wieder - GRASP baut viele randomisierte
+ATCS-Varianten (dieselbe Formel, aber pro Entscheidung zufällig aus den besten
+RCL_SIZE Kandidaten statt immer strikt dem besten gewählt), behält die beste, und
+verbessert sie anschließend mit lokaler Suche (zufällige Ein-Leg-Störungen, nur
+behalten wenn sie das Zielmaß verbessern). Gemessen auf demselben Zielwert, den
+OR-Tools tatsächlich minimiert (gewichtete Fertigstellungszeit + Verspätung, nicht die
+angezeigte Gesamtdurchlaufzeit) - geschweept über 4 Szenario-Familien x 15 Seeds:
+schlägt Koordiniert fast immer (0-1 Verluste je Familie) und schließt 14-33% der
+verbleibenden Lücke zu OR-Tools, bei bis zu ~2s Laufzeit am oberen Ende der Regler -
+schnell genug, um wie die anderen drei eigenen Verfahren direkt mitzulaufen, ganz ohne
+Button/Cooldown wie bei OR-Tools.
 
 Ein Anteil der Aufträge kann als Express markiert werden (engere Frist). Nur Koordiniert
 (EXPRESS_WEIGHT als Gewicht im ATCS-Index) und OR-Tools (dasselbe EXPRESS_WEIGHT im
@@ -100,6 +117,7 @@ from warehouse_constants import (
 from warehouse_demand import generate_orders
 from warehouse_dispatch_baseline import dispatch_baseline
 from warehouse_dispatch_coordinated import dispatch_coordinated
+from warehouse_dispatch_grasp import dispatch_grasp
 from warehouse_dispatch_greedy import dispatch_greedy
 from warehouse_evaluation import evaluate_schedule
 from warehouse_network import build_network
@@ -126,7 +144,7 @@ from warehouse_visualization import (
 PRESET_BUTTONS = {
     "Kleines Lager, wenig Verkehr": (
         "🏬",
-        "Kaum Engpässe an Umschlagpunkten – alle vier Verfahren liegen nah beieinander. "
+        "Kaum Engpässe an Umschlagpunkten – alle fünf Verfahren liegen nah beieinander. "
         "Zeigt: Koordination hilft nur, wenn Kapazität tatsächlich knapp ist.",
     ),
     "Stoßzeit mit Engpass am Umschlagpunkt": (
@@ -161,6 +179,7 @@ def _run_own_methods(n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cr
         "baseline": dispatch_baseline(network, routes, orders, tpz, handover),
         "greedy": dispatch_greedy(network, routes, orders, tpz, handover),
         "coordinated": dispatch_coordinated(network, routes, orders, tpz, handover),
+        "grasp": dispatch_grasp(network, routes, orders, tpz, handover, seed=int(seed)),
     }
     evaluations = {
         method: evaluate_schedule(schedule, routes, orders, handover) for method, schedule in schedules.items()
@@ -274,7 +293,7 @@ with st.sidebar:
         "Anteil zonenübergreifend", *bounds("cross_zone_slider"), key="cross_zone_slider",
         help="Anteil der Aufträge, deren Ziel in einer anderen Gasse liegt als der Ursprung "
              "- nur diese durchlaufen überhaupt einen Umschlagpunkt. Bei 0 gibt es keine "
-             "Umstiege und alle vier Verfahren liefern dasselbe Ergebnis.",
+             "Umstiege und alle fünf Verfahren liefern dasselbe Ergebnis.",
     )
     express = st.slider(
         "Anteil Express-Aufträge", *bounds("express_slider"), key="express_slider",
@@ -403,7 +422,7 @@ st.markdown("---")
 
 # ---- Detail area ----
 with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleich", expanded=False):
-    tabs = st.tabs(["⏱️ Unoptimiert", "🏭 Dezentral (Greedy)", "🔗 Koordiniert", "✅ OR-Tools", "📊 Vergleich", "🎬 Animation"])
+    tabs = st.tabs(["⏱️ Unoptimiert", "🏭 Dezentral (Greedy)", "🔗 Koordiniert", "🎲 GRASP", "✅ OR-Tools", "📊 Vergleich", "🎬 Animation"])
 
     with tabs[0]:
         render_method_panel(
@@ -427,6 +446,13 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
         )
 
     with tabs[3]:
+        render_method_panel(
+            "grasp", schedules["grasp"], evaluations["grasp"], orders_by_id, network, transporters_per_zone,
+            extra_caption="Baut auf derselben ATCS-Regel wie Koordiniert auf, probiert aber viele randomisierte "
+                          "Varianten davon aus und verbessert die beste per lokaler Suche - siehe Erklärung unten.",
+        )
+
+    with tabs[4]:
         @st.fragment
         def _render_ortools_tab():
             st.markdown(
@@ -472,7 +498,7 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
                 st.session_state["ortools_status"] = status
                 st.session_state["ortools_scenario_key"] = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover)
                 # A fragment-scoped rerun here would only patch THIS
-                # fragment's own DOM region - the Vergleich tab (tabs[4],
+                # fragment's own DOM region - the Vergleich tab (tabs[5],
                 # outside the fragment) reads ortools_schedule too, but
                 # would keep showing whatever it rendered during the last
                 # FULL script run (i.e. without OR-Tools) until some
@@ -502,7 +528,7 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
 
         _render_ortools_tab()
 
-    with tabs[4]:
+    with tabs[5]:
         compare_evals = dict(evaluations)
         ortools_schedule = st.session_state.get("ortools_schedule")
         current_key = (n_aisles, nodes_per_aisle, hub_nodes, n_orders, horizon, cross_zone, express, seed, trans_aisle, trans_hub, handover)
@@ -538,7 +564,7 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
                 "ignorieren sie bewusst."
             )
 
-    with tabs[5]:
+    with tabs[6]:
         method_choice = st.selectbox(
             "Verfahren für Animation", list(schedules.keys()), format_func=lambda m: METHOD_LABELS.get(m, m), key="anim_method",
         )
@@ -594,7 +620,7 @@ Wartezeit, diesmal auf ein freies Gassen-Shuttle in Gasse 4. *Leg 3:* letztes St
 Zielposition, z. B. 2 Minuten. Reine Fahrzeit also 9 Minuten plus 2 Minuten Umstiegszeit =
 11 Minuten bestenfalls - jede zusätzliche Minute, die Auftrag 7 an einem der beiden
 Umschlagpunkte auf einen freien Transporter wartet, zählt direkt in seine
-**Gesamtdurchlaufzeit** hinein, der einzigen Größe, an der alle vier Verfahren gemessen
+**Gesamtdurchlaufzeit** hinein, der einzigen Größe, an der alle fünf Verfahren gemessen
 werden. Die Wartezeit selbst ist keine eigene Kennzahl mehr in dieser Demo, sondern nur
 noch ein Bestandteil, den das Aufschlüsselungs-Diagramm oben sichtbar macht.
 
@@ -621,7 +647,7 @@ Vereinfachung, sondern der Punkt: ein rein lokales oder unkoordiniertes System d
 der Praxis oft tatsächlich an gesetzten Prioritäten vorbei, weil es sie schlicht nicht als
 Signal nutzt. Koordiniert und OR-Tools tun das dagegen aktiv (Details unten je Verfahren).
 
-**Vier Dispositionsverfahren, alle mit derselben Kennzahlen-Berechnung ausgewertet:**
+**Fünf Dispositionsverfahren, alle mit derselben Kennzahlen-Berechnung ausgewertet:**
 - **Unoptimiert (FCFS):** keine Prioritätslogik, wer zuerst bereit ist, wird zuerst bedient.
 - **Dezentral/Greedy:** jede Zone dispatcht lokal nach kürzester Fahrzeit des aktuellen Legs
   (Shortest Processing Time, SPT) - für eine einzelne Ressource nachweislich optimal zur
@@ -644,6 +670,19 @@ Signal nutzt. Koordiniert und OR-Tools tun das dagegen aktiv (Details unten je V
   Szenario-Familie, nicht nur manchen - ein durchgängiger, nicht nur gelegentlicher
   Gewinn. Express-Aufträge bekommen ein höheres Gewicht im SPT-Term (EXPRESS_WEIGHT,
   dieselbe Konstante wie bei OR-Tools unten) statt eines eigenen Faktors.
+- **GRASP (Greedy Randomized Adaptive Search Procedure, Feo/Resende):** baut auf
+  Koordiniert's ATCS-Index auf, statt sie zu ersetzen. Konstruktionsphase: dieselbe
+  ATCS-Formel, aber jede Dispositionsentscheidung wählt zufällig aus den RCL_SIZE
+  bestbewerteten bereiten Legs statt strikt dem besten (eine "Restricted Candidate
+  List") - 150 unabhängige, randomisierte Simulationsläufe, der beste wird behalten.
+  Lokale Suche danach: bis zu 400 zufällige Ein-Leg-Störungen der Priorität, jede neu
+  simuliert und nur behalten, wenn sie das Zielmaß verbessert. Anders als die anderen
+  drei Verfahren trifft GRASP nicht EINE Entscheidung pro Ereignis, sondern probiert
+  viele komplette Pläne durch - das kann eine frühere ATCS-Entscheidung im Rückblick
+  revidieren, was ATCS selbst strukturell nie kann. Gemessen am Zielwert, den auch
+  OR-Tools minimiert (gewichtete Fertigstellungszeit + Verspätung): schlägt Koordiniert
+  fast immer und schließt einen Teil (geschweept: 14-33%) der verbleibenden Lücke zu
+  OR-Tools, bei bis zu ~2s Laufzeit am oberen Ende der Regler.
 - **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer. Weil Repositionierung
   davon abhängt, WELCHER Transporter einen Leg übernimmt, sind Transporter hier keine
   anonyme Kapazität mehr wie zuvor ohne Repositionierung: jeder Leg bekommt eine
@@ -662,7 +701,7 @@ Signal nutzt. Koordiniert und OR-Tools tun das dagegen aktiv (Details unten je V
   eigenen Heuristiken.
 
 **Kern-Kennzahl:** Die **Gesamtdurchlaufzeit** (Summe bzw. Durchschnitt über
-alle Auftrags-Durchlaufzeiten) - das Hauptkriterium, nach dem alle vier Verfahren
+alle Auftrags-Durchlaufzeiten) - das Hauptkriterium, nach dem alle fünf Verfahren
 disponieren und verglichen werden. Umstiegs-Wartezeit und Repositionierung sind keine
 eigenen Ziele, sondern Ursachen, die sich in dieser einen Zahl niederschlagen; die
 Aufschlüsselungs-Diagramme oben und im Vergleichstab zeigen nur, WORAUS sie sich
@@ -675,7 +714,7 @@ von der Gesamtpünktlichkeit.
 
 **In einem echten Lager** kämen weitere Nebenbedingungen dazu (Batterie-/Ladezyklen der
 Shuttles, mehrstöckige Hub-Topologien, tatsächliche Kollisionsvermeidung innerhalb einer
-Gasse) - das Grundprinzip aus Zonenbindung, Umschlagpunkten und den vier
+Gasse) - das Grundprinzip aus Zonenbindung, Umschlagpunkten und den fünf
 Dispositionsverfahren bleibt aber dasselbe.
 """
     )
@@ -733,13 +772,13 @@ umgesetzt (`warehouse_ortools_solver.py`) - bewusst keine `AddCumulative`-Kapazi
 mehr wie vor Einführung der Repositionierung, weil Transporter innerhalb einer Zone dafür
 austauschbar sein müssten, was mit positionsabhängigen Rüstzeiten nicht mehr gilt.
 
-Die drei eigenen Heuristiken lösen strukturell dasselbe Problem über eine ereignisgesteuerte
-Simulation (`warehouse_dispatch_core.py`): sobald ein Transporter frei wird UND mindestens ein
-Leg bereit ist, wird der Leg mit der höchsten Priorität zugewiesen, dann - unter allen gerade
-freien Transportern der Zone - der mit der geringsten Repositionierungsfahrt zu diesem Leg.
-Start = aktueller Zeitpunkt plus diese Fahrzeit. Die drei Verfahren unterscheiden sich
-ausschließlich in der Prioritätsfunktion: konstant bei FCFS, kürzeste Fahrzeit des aktuellen
-Legs bei Greedy, und bei Koordiniert
+Unoptimiert, Greedy und Koordiniert lösen strukturell dasselbe Problem über eine
+ereignisgesteuerte Simulation (`warehouse_dispatch_core.py`): sobald ein Transporter frei
+wird UND mindestens ein Leg bereit ist, wird der Leg mit der höchsten Priorität zugewiesen,
+dann - unter allen gerade freien Transportern der Zone - der mit der geringsten
+Repositionierungsfahrt zu diesem Leg. Start = aktueller Zeitpunkt plus diese Fahrzeit. Die
+drei Verfahren unterscheiden sich ausschließlich in der Prioritätsfunktion: konstant bei
+FCFS, kürzeste Fahrzeit des aktuellen Legs bei Greedy, und bei Koordiniert
 """
     )
     st.latex(
@@ -776,6 +815,22 @@ zuerst" verlor gegen Greedy, sobald Repositionierung Teil des Modells wurde; die
 gebaute Linearkombination aus drei unabhängig geschweepten additiven Gewichten
 funktionierte, aber nicht durchgängig - bei der Gesamtverspätung schlägt die jetzige
 ATCS-Fassung sie in JEDER getesteten Szenario-Familie, nicht nur einigen.
+
+**GRASP** (`warehouse_dispatch_grasp.py`) ersetzt $I(o,\ell)$ nicht, sondern nutzt sie als
+Konstruktionsregel: statt bei jeder Entscheidung strikt $\arg\max I$ zu wählen, wird
+gleichverteilt zufällig aus den RCL_SIZE höchsten $I$-Werten der bereiten Legs gezogen
+(eine "Restricted Candidate List", Feo/Resende 1989/1995) - GRASP_ITERATIONS unabhängige
+Simulationsläufe, der beste behalten. Danach LOCAL_SEARCH_MOVES zufällige Störungen: ein
+additiver Bias-Term $b_{o,\ell}$ wird zu $-I(o,\ell)$ addiert, für ein zufällig gewähltes
+$(o,\ell)$ auf einen zufälligen Wert in $[-0{,}5\bar d,\, 0{,}5\bar d]$ gesetzt, neu
+simuliert, und nur behalten, wenn er das Zielmaß verbessert - sonst verworfen. Bewertet
+wird nicht die angezeigte Gesamtdurchlaufzeit, sondern derselbe gewichtete
+Zielwert wie oben (Fertigstellungszeit + Verspätungsstrafe), damit "Lücke zu OR-Tools
+schließen" auf der Größe gemessen ist, die OR-Tools tatsächlich minimiert. Geschweept über
+4 Szenario-Familien x 15 Seeds bei GRASP_ITERATIONS=150, RCL_SIZE=4,
+LOCAL_SEARCH_MOVES=400: schlägt Koordiniert auf fast jedem Seed und schließt 14-33% der
+Lücke zu OR-Tools, bei bis zu ~2s Laufzeit an den Regler-Obergrenzen - ein größeres Budget
+(300/800) brachte in der Sweep-Messung nur noch marginal mehr bei etwa doppelter Laufzeit.
 """
     )
 
