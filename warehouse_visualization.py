@@ -58,6 +58,11 @@ def build_warehouse_figure(network):
         margin=dict(l=10, r=10, t=30, b=10), height=420,
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
+    # fixedrange auf beiden Achsen: verhindert Pinch-Zoom/Drag-Pan im Chart,
+    # damit auf Touch-Geräten stattdessen die Seite normal gescrollt wird
+    # (Hover-Tooltips bleiben davon unberührt).
+    fig.update_xaxes(fixedrange=True)
+    fig.update_yaxes(fixedrange=True)
     return fig
 
 
@@ -126,6 +131,8 @@ def build_gantt_figure(schedule, network, transporters_per_zone):
         margin=dict(l=10, r=10, t=30, b=10), height=max(320, 28 * len(transporter_order)),
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
+    fig.update_xaxes(fixedrange=True)
+    fig.update_yaxes(fixedrange=True)
     return fig
 
 
@@ -146,6 +153,8 @@ def build_lead_time_figure(evaluations):
         margin=dict(l=10, r=10, t=30, b=10), height=360,
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
+    fig.update_xaxes(fixedrange=True)
+    fig.update_yaxes(fixedrange=True)
     return fig
 
 
@@ -162,6 +171,8 @@ def build_kpi_comparison_figure(evaluations):
         yaxis_title="Durchschn. Gesamtdurchlaufzeit (min)",
         showlegend=False,
     )
+    fig.update_xaxes(fixedrange=True)
+    fig.update_yaxes(fixedrange=True)
     return fig
 
 
@@ -197,6 +208,8 @@ def build_lead_time_composition_figure(evaluations, handover_minutes):
         margin=dict(l=10, r=10, t=30, b=10), height=360,
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
+    fig.update_xaxes(fixedrange=True)
+    fig.update_yaxes(fixedrange=True)
     return fig
 
 
@@ -281,4 +294,6 @@ def build_animation_figure(schedule, network, orders, n_frames=30):
             )
         ],
     )
+    fig.update_xaxes(fixedrange=True)
+    fig.update_yaxes(fixedrange=True)
     return fig
