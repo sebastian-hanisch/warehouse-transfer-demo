@@ -166,6 +166,20 @@ gesetzte Prioritäten in der Praxis oft schlicht nicht respektiert.
 | `warehouse_ui_panel.py` | Wiederverwendbares Panel je Verfahren |
 | `tests/` | Netzwerk-/Routing-Korrektheit, Kein-Doppel-Buchung, Umstiegs-Präzedenz, Repositionierung entspricht realer Netzwerk-Distanz, KPI-Berechnung an Hand-Beispiel, Permalink-Clamping |
 
+## Verwandte Demos mit demselben mathematischen Modell
+
+Verschiedene Themen im Portfolio teilen (fast) dasselbe Modell. Vor einer neuen Demo-Idee deshalb das
+Modell vergleichen, nicht die Kulisse (Stand 2026-09-23):
+
+- **Parallele Maschinen mit Fristen (gewichtete Fertigstellung + Verspätung, ATCS, CP-SAT als Referenz):** diese
+  Demo ist der Referenzfall. Dasselbe Modell steckt in jeder Freigabe- oder Dispositionsfrage mit Fristen, z. B.
+  Kommissionierwellen mit Versandfristen (offene Erweiterung der `order_batch-demo`, dort mit Kommissionierern als
+  Maschinen). Befunde wie das Lookahead-Fenster (bewusste Leerzeit) und die Lücke zu CP-SAT sind dort zu erwarten.
+- Vorab-Messreihe (2026-09-23) für die Kombination mit Gangkonflikten (mehrere Kommissionierer, Blockieren in
+  schmalen Gängen): ohne Blockieren fällt sie exakt auf dieses Modell zurück; mit Blockieren frisst der
+  Wartezeitanteil bis zu 57 % des Vorteils einer Fristenregel (EDD gegenüber FIFO). Formal ein Job-Shop mit Fristen
+  und Obergrenze paralleler Aufträge.
+
 ## Lokal ausführen
 
 ```bash
