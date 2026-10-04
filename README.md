@@ -105,15 +105,15 @@ derselben Kennzahlen-Berechnung ausgewertet:
   jedes Legpaar auf demselben Transporter erzwingt eine reifizierte Nebenbedingung die
   reale Repositionierungszeit dazwischen – ein Standardmuster für "parallele Maschinen mit
   sequenzabhängigen Rüstzeiten", deutlich aufwändiger als die `AddCumulative`-Formulierung
-  vor Einführung der Repositionierung, aber weiterhin gut lösbar (< 1 s selbst am oberen
-  Rand der Schieberegler-Bereiche). Ziel: minimale gewichtete Gesamtdurchlaufzeit PLUS
+  vor Einführung der Repositionierung, aber weiterhin gut lösbar (kleine Szenarien in < 1 s; am oberen
+  Rand der Schieberegler-Bereiche erreicht der Solver sein Zeitlimit und meldet die beste gefundene Lösung als „feasible“). Ziel: minimale gewichtete Gesamtdurchlaufzeit PLUS
   eine echte Verspätungsstrafe (`max(0, Fertigstellung - Frist)` je Auftrag) – anders als
   bei Koordiniert funktioniert das gegatete Muster hier, weil OR-Tools global über den
   gesamten Plan optimiert statt Leg für Leg lokal zu entscheiden. Button-gesteuert mit
   Zeitlimit und Cooldown (analog zu den Schwesterdemos).
 
 Zusätzlich kann ein Anteil der Aufträge als **Express** markiert werden (engere Frist).
-Nur Koordiniert (EXPRESS_WEIGHT als Gewicht $w$ im ATCS-Index) und OR-Tools (dasselbe
+Nur Koordiniert (EXPRESS_WEIGHT als Gewicht $w$ im ATCS-Index), GRASP (derselbe ATCS-Index) und OR-Tools (dasselbe
 EXPRESS_WEIGHT im Zielwert, klassische Weighted-Completion-Time-Formulierung, plus die
 Verspätungsstrafe) nutzen Frist bzw. Markierung aktiv – dieselbe Konstante für beide,
 nicht mehr zwei unabhängig gewählte Zahlen für dieselbe Idee. Unoptimiert und Greedy
@@ -137,7 +137,7 @@ gesetzte Prioritäten in der Praxis oft schlicht nicht respektiert.
   Repositionierung tauchen nur noch in einer Aufschlüsselung (gestapeltes Balkendiagramm:
   reine Fahrzeit / feste Umstiegszeit / Warten) als Erklärung auf, woraus sich diese eine
   Zahl zusammensetzt – nicht mehr als eigene KPI-Kachel oder eigenes Vergleichschart.
-  Koordiniert und OR-Tools blenden zusätzlich einen kleinen Verspätungs-/
+  Koordiniert, GRASP und OR-Tools blenden zusätzlich einen kleinen Verspätungs-/
   Dringlichkeitsterm in dieselbe Zielfunktion ein (s. o.). Bei aktiven Express-Aufträgen
   wird zusätzlich deren **Pünktlichkeit** separat von der Gesamtpünktlichkeit verfolgt.
 - Ein Beispielszenario ("Stoßzeit mit Engpass am Umschlagpunkt") ist bewusst so
@@ -191,6 +191,4 @@ Tests: `pytest tests/ -v`
 
 ---
 
-Teil des [Operations-Research-Demo-Portfolios](https://sebastianhanisch.net/demos.html) von
-[Sebastian Hanisch](https://sebastianhanisch.net) – Operations Research und Machine Learning.
-Interesse an einer maßgeschneiderten Lösung? [Kontakt aufnehmen](https://sebastianhanisch.net/kontakt.html).
+Diese Demo ist Teil des Portfolios von [Sebastian Hanisch](https://sebastianhanisch.net) – Operations Research und Machine Learning ([Über mich](https://sebastianhanisch.net/ueber-mich.html)). Mehr zum Thema: [Lagerlogistik optimieren](https://sebastianhanisch.net/lagerlogistik-optimierung.html).

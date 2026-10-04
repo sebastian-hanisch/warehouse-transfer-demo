@@ -42,7 +42,7 @@ Repositionierung sind keine eigenen Ziele, sondern Ursachen, die sich in der
 Gesamtdurchlaufzeit niederschlagen; sie tauchen in der App nur noch als Erklärung auf,
 WORAUS sich die Gesamtdurchlaufzeit zusammensetzt (siehe
 `build_lead_time_composition_figure`), nicht als eigene KPI-Kacheln oder
-Vergleichscharts. Koordiniert und OR-Tools blenden zusätzlich einen kleinen
+Vergleichscharts. Koordiniert, GRASP und OR-Tools blenden zusätzlich einen kleinen
 Verspätungs-/Dringlichkeitsterm mit ein (Details unten je Verfahren) -
 Gesamtdurchlaufzeit bleibt dominant, Pünktlichkeit ist kein zweites, gleichrangiges
 Ziel, sondern ein mitgewichteter Nebenaspekt derselben Zielfunktion. Kernthema: lokal
@@ -94,7 +94,8 @@ unabhängigen Achse (WANN disponiert wird, nicht WELCHER Kandidat gewinnt) und i
 deshalb kein Widerspruch zu diesem negativen Befund.
 
 Ein Anteil der Aufträge kann als Express markiert werden (engere Frist). Nur Koordiniert
-(EXPRESS_WEIGHT als Gewicht im ATCS-Index) und OR-Tools (dasselbe EXPRESS_WEIGHT im
+(EXPRESS_WEIGHT als Gewicht im ATCS-Index), GRASP (derselbe ATCS-Index, dazu dasselbe
+Zielmaß wie OR-Tools) und OR-Tools (dasselbe EXPRESS_WEIGHT im
 Zielwert PLUS echter Verspätungs-Strafterm) nutzen Frist bzw. Markierung aktiv -
 Unoptimiert und Greedy ignorieren beides bewusst, um zu zeigen, dass ein rein
 lokales/unkoordiniertes System gesetzte Prioritäten in der Praxis oft schlicht nicht
@@ -159,7 +160,7 @@ from warehouse_visualization import (
 PRESET_BUTTONS = {
     "Kleines Lager, wenig Verkehr": (
         "🏬",
-        "Kaum Engpässe an Umschlagpunkten – alle fünf Verfahren liegen nah beieinander. "
+        "Kaum Engpässe an Umschlagpunkten – Unoptimiert, Dezentral und Koordiniert liegen nah beieinander (GRASP und OR-Tools sind auch hier deutlich besser). "
         "Zeigt: Koordination hilft nur, wenn Kapazität tatsächlich knapp ist.",
     ),
     "Stoßzeit mit Engpass am Umschlagpunkt": (
@@ -308,11 +309,11 @@ with st.sidebar:
         "Anteil zonenübergreifend", *bounds("cross_zone_slider"), key="cross_zone_slider",
         help="Anteil der Aufträge, deren Ziel in einer anderen Gasse liegt als der Ursprung "
              "- nur diese durchlaufen überhaupt einen Umschlagpunkt. Bei 0 gibt es keine "
-             "Umstiege und alle fünf Verfahren liefern dasselbe Ergebnis.",
+             "Umstiege; die Verfahren unterscheiden sich dann nur noch in der Reihenfolge innerhalb einer Gasse.",
     )
     express = st.slider(
         "Anteil Express-Aufträge", *bounds("express_slider"), key="express_slider",
-        help="Anteil der Aufträge mit engerer Frist. Nur Koordiniert und OR-Tools nutzen "
+        help="Anteil der Aufträge mit engerer Frist. Nur Koordiniert, GRASP und OR-Tools nutzen "
              "das als Dispositionssignal und ziehen Express-Aufträge konsequent vor - "
              "Unoptimiert und Dezentral/Greedy ignorieren es bewusst, genau wie ein rein "
              "lokales System in der Praxis oft an gesetzten Prioritäten vorbeidisponiert.",
@@ -370,7 +371,7 @@ if lead_reduction > 0:
         f"zeigt der Abschnitt unten."
     )
 else:
-    st.info("Bei diesem Szenario gibt es kaum Engpässe an Umschlagpunkten - alle Verfahren liegen nah beieinander.")
+    st.info("Bei diesem Szenario gibt es kaum Engpässe an Umschlagpunkten - Dezentral und Koordiniert liegen nah beieinander.")
 
 st.plotly_chart(build_warehouse_figure(network), width='stretch', key="warehouse_figure_primary")
 
@@ -574,8 +575,8 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
         st.caption("Alle Verfahren lösen dasselbe Szenario mit derselben Kennzahlen-Berechnung - fair vergleichbar.")
         if has_express:
             st.caption(
-                "🚀 Express-Aufträge sind in der Auftragstabelle jedes Verfahrens markiert. Nur Koordiniert "
-                "und OR-Tools nutzen die Markierung als Dispositionssignal - Unoptimiert und Dezentral/Greedy "
+                "🚀 Express-Aufträge sind in der Auftragstabelle jedes Verfahrens markiert. Nur Koordiniert, "
+                "GRASP und OR-Tools nutzen die Markierung als Dispositionssignal - Unoptimiert und Dezentral/Greedy "
                 "ignorieren sie bewusst."
             )
 
@@ -660,7 +661,7 @@ ignorieren die Markierung bewusst - beide bleiben bei ihrer jeweiligen Logik (An
 kürzeste Fahrzeit), egal ob ein Auftrag als dringend markiert ist oder nicht. Das ist keine
 Vereinfachung, sondern der Punkt: ein rein lokales oder unkoordiniertes System disponiert in
 der Praxis oft tatsächlich an gesetzten Prioritäten vorbei, weil es sie schlicht nicht als
-Signal nutzt. Koordiniert und OR-Tools tun das dagegen aktiv (Details unten je Verfahren).
+Signal nutzt. Koordiniert, GRASP (über denselben ATCS-Index) und OR-Tools tun das dagegen aktiv (Details unten je Verfahren).
 
 **Fünf Dispositionsverfahren, alle mit derselben Kennzahlen-Berechnung ausgewertet:**
 - **Unoptimiert (FCFS):** keine Prioritätslogik, wer zuerst bereit ist, wird zuerst bedient.
@@ -726,7 +727,7 @@ alle Auftrags-Durchlaufzeiten) - das Hauptkriterium, nach dem alle fünf Verfahr
 disponieren und verglichen werden. Umstiegs-Wartezeit und Repositionierung sind keine
 eigenen Ziele, sondern Ursachen, die sich in dieser einen Zahl niederschlagen; die
 Aufschlüsselungs-Diagramme oben und im Vergleichstab zeigen nur, WORAUS sie sich
-zusammensetzt. Koordiniert und OR-Tools blenden zusätzlich einen kleinen
+zusammensetzt. Koordiniert, GRASP und OR-Tools blenden zusätzlich einen kleinen
 Verspätungs-/Dringlichkeitsterm in dieselbe Zielfunktion ein (Details oben je
 Verfahren) - Pünktlichkeit ist damit kein zweites, gleichrangiges Ziel, sondern ein
 mitgewichteter Nebenaspekt, der bei Bedarf leicht in Gesamtdurchlaufzeit "eintauscht".
@@ -882,6 +883,6 @@ steht dazu nicht im Widerspruch.
 st.markdown("---")
 st.caption(
     "Diese Demo ist Teil des Portfolios von [Sebastian Hanisch](https://sebastianhanisch.net) – "
-    "Operations Research und Machine Learning. Interesse an einer maßgeschneiderten Lösung für "
-    "Ihr Unternehmen? [Kontakt aufnehmen](https://sebastianhanisch.net/kontakt.html)"
+    "Operations Research und Machine Learning ([Über mich](https://sebastianhanisch.net/ueber-mich.html)). "
+    "Mehr zum Thema: [Lagerlogistik optimieren](https://sebastianhanisch.net/lagerlogistik-optimierung.html)."
 )

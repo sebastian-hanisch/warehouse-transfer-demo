@@ -62,7 +62,7 @@ DUE_DATE_BUFFER_MINUTES = 20.0
 DUE_DATE_BUFFER_MINUTES_EXPRESS = 8.0
 
 # Share of orders flagged as express (tighter due date). Only the coordinated
-# heuristic and OR-Tools actually use the flag as a dispatch signal - baseline
+# heuristic, GRASP (built on its ATCS index) and OR-Tools actually use the flag as a dispatch signal - baseline
 # (FCFS) and greedy (local SPT) stay blind to it by design, the same way real
 # naive/local dispatch often ignores stated priorities.
 DEFAULT_EXPRESS_SHARE = 0.2
