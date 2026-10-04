@@ -25,9 +25,8 @@ Präzedenz zwischen Legs desselben Auftrags auf verschiedenen Transportern/Zonen
 mehrstufige Job-Shop-Struktur als eine einzelne Fahrzeugtour. Diese
 Transfer-Synchronisation ist in der VRP-Literatur selbst ein anerkanntes Teilgebiet –
 "VRP with Synchronization Constraints" (Übersicht: Drexl 2012) bzw., noch konkreter für
-eine Hub-Hierarchie aus verschiedenen Fahrzeugflotten, das Multi-Echelon-VRP (Übersicht:
-Cuda/Guastaroba/Speranza 2015); PDPT wird dort meist als Unterfall genau wegen dieser
-Transfer-Synchronisation geführt, nicht als Nebenaspekt. Deshalb baut Koordiniert auf
+eine Hub-Hierarchie aus verschiedenen Fahrzeugflotten, das Two-Echelon-Routing (Übersicht:
+Cuda/Guastaroba/Speranza 2015); PDPT ist ein typisches Beispiel für genau diese Transfer-Synchronisation, kein Nebenaspekt. Deshalb baut Koordiniert auf
 einer Scheduling-Regel (ATCS) statt einer klassischen Tourenplanungs-Heuristik auf, obwohl
 beide Sichtweisen dieselbe zugrunde liegende Kombinatorik beschreiben.
 
@@ -52,7 +51,7 @@ derselben Kennzahlen-Berechnung ausgewertet:
   eigenen Transporter gerade stehen.
 - **Koordiniert (ATCS):** keine handgestrickte Formel, sondern **Apparent Tardiness Cost
   with Setups** – eine literaturbekannte Dispatching-Regel (Vepsalainen & Morton 1987,
-  Setup-Erweiterung u. a. Lee/Bhaskaran/Pinedo 1997) für genau diese Problemklasse:
+  Setup-Erweiterung u. a. Lee/Bhaskaran/Pinedo 1997, auf parallele Maschinen erweitert von Lee/Pinedo 1997) für genau diese Problemklasse:
   parallele Maschinen mit sequenzabhängigen Rüstzeiten und Fristen. Der Index
   `I = (w/p) · exp(-Zeitpuffer / (K₁·p̄)) · exp(-Repositionierdistanz / (K₂·p̄))`
   kombiniert gewichtetes SPT mit zwei Exponentialfunktionen (Dringlichkeit,
@@ -78,7 +77,7 @@ derselben Kennzahlen-Berechnung ausgewertet:
   demselben Zielwert, den auch OR-Tools minimiert (gewichtete Fertigstellungszeit +
   Verspätung, nicht die angezeigte Gesamtdurchlaufzeit) – geschweept über 4
   Szenario-Familien x 15 Seeds bei 150/4/400: schlägt Koordiniert fast immer und schließt
-  14–33 % der verbleibenden Lücke zu OR-Tools, bei bis zu ~2 s Laufzeit an den
+  grob 15–30 % der verbleibenden Lücke zu OR-Tools (vor dem Lookahead-Fenster), bei etwa 2–3 s Laufzeit an den
   Regler-Obergrenzen; ein größeres Budget (300/800) brachte nur noch marginal mehr bei
   etwa doppelter Laufzeit. Läuft, wie die anderen drei eigenen Verfahren, inline ohne
   Button/Cooldown.
@@ -88,13 +87,16 @@ derselben Kennzahlen-Berechnung ausgewertet:
   ein bereiter Leg existieren (Non-Delay) – vor jeder Zuweisung prüft GRASP jetzt
   zusätzlich, ob innerhalb des Fensters ein deutlich dringenderer Leg bereit wird, und
   lässt den Transporter dafür bewusst kurz stehen ("eingefügte Leerzeit"). Direkt an
-  echten OR-Tools-Lösungen verifiziert, dass das kein Kunstgriff ist: 6 von 37
-  nachweislich optimalen CP-SAT-Lösungen an einem Hub-Engpass-Szenario lassen den
+  echten OR-Tools-Lösungen verifiziert, dass das kein Kunstgriff ist: ein Teil der
+  nachweislich optimalen CP-SAT-Lösungen an einem Hub-Engpass-Szenario (Nachmessung: 10 von
+  37 kleinen Szenarien; die frühere Zählung „6 von 37“ ist nicht reproduziert) lässt den
   einzigen Hub-Transporter genau so bewusst leer stehen – ein klassisches Resultat der
   Scheduling-Theorie (bei einer gewichteten Zielgröße ist die optimale Lösung nicht
   immer ein Non-Delay-Schedule). Geschweept (0–2 min, dieselben 4 Familien × 15 Seeds):
-  0,75 min schließt jetzt **25–39 %** der Lücke zu OR-Tools statt 14–33 %, in jeder
-  Familie, bei bis zu ~3,9 s Laufzeit an den Regler-Obergrenzen. Ein separater Versuch,
+  0,75 min schließt jetzt grob **25–35 %** der Lücke zu OR-Tools statt grob 15–30 %
+  (Nachmessung auf vier Familien mit je 6 Seeds: Familienmittel 23–36 % statt 18–27 %;
+  der ursprüngliche 15-Seed-Sweep ist nicht reproduziert), bei etwa 3–4 s CPU-Zeit an den
+  Regler-Obergrenzen (rechnerabhängig). Ein separater Versuch,
   stattdessen die Lokalsuche selbst durch echte Swap-Züge + Iterated Local Search zu
   ersetzen, brachte keine verlässliche Verbesserung bei fast doppelter Laufzeit und
   wurde wieder verworfen – das Lookahead-Fenster wirkt auf einer unabhängigen Achse

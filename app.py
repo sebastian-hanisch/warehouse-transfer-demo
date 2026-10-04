@@ -20,9 +20,8 @@ starten, wenn Leg 1 in einer anderen Zone fertig ist) - eher mehrstufige
 Job-Shop-Struktur als eine einzelne Fahrzeugtour. Diese Transfer-Synchronisation ist
 in der VRP-Literatur selbst ein anerkanntes Teilgebiet - "VRP with Synchronization
 Constraints" (Übersicht: Drexl 2012) bzw., noch konkreter für eine Hub-Hierarchie aus
-verschiedenen Fahrzeugflotten, das Multi-Echelon-VRP (Übersicht: Cuda/Guastaroba/
-Speranza 2015); PDPT wird dort meist als Unterfall genau wegen dieser
-Transfer-Synchronisation geführt, nicht als Nebenaspekt. Deshalb baut Koordiniert auf
+verschiedenen Fahrzeugflotten, das Two-Echelon-Routing (Übersicht: Cuda/Guastaroba/
+Speranza 2015); PDPT ist ein typisches Beispiel für genau diese Transfer-Synchronisation, kein Nebenaspekt. Deshalb baut Koordiniert auf
 einer Scheduling-Regel (ATCS) statt einer klassischen VRP-Heuristik auf, obwohl beide
 Sichtweisen dieselbe zugrunde liegende Kombinatorik beschreiben. Transporter werden
 einzeln mit Position geführt (nicht nur als Kapazitätszahl) - wer gerade abgeliefert
@@ -71,9 +70,11 @@ ATCS-Varianten (dieselbe Formel, aber pro Entscheidung zufällig aus den besten
 RCL_SIZE Kandidaten statt immer strikt dem besten gewählt), behält die beste, und
 verbessert sie anschließend mit lokaler Suche (zufällige Ein-Leg-Störungen, nur
 behalten wenn sie das Zielmaß verbessern). Direkt am OR-Tools-Ergebnis nachgeprüft,
-WARUM überhaupt noch eine Lücke bleibt: in 6 von 37 nachweislich optimalen
+WARUM überhaupt noch eine Lücke bleibt: in einem Teil der nachweislich optimalen
 CP-SAT-Lösungen an einem Hub-Engpass lässt der Solver den einzigen
-Hub-Transporter bewusst kurz leer stehen, obwohl schon ein Auftrag bereitstand -
+Hub-Transporter bewusst kurz leer stehen, obwohl schon ein Auftrag bereitstand
+(Nachmessung an 37 kleinen Engpass-Szenarien: 10 von 37 bei 8 Aufträgen, 15 von 37 bei
+10 Aufträgen; die frühere Zählung "6 von 37" ist nicht reproduziert) -
 "eingefügte Leerzeit", ein klassischer Grund, warum ein Non-Delay-Verfahren (immer
 sofort disponieren, sobald möglich) bei einer GEWICHTETEN Zielgröße strukturell nicht
 mithalten kann. GRASP bekam deshalb zusätzlich ein Lookahead-Fenster
@@ -82,9 +83,11 @@ Fenster ein deutlich dringenderer Leg bereit wird - wenn ja, bleibt der Transpor
 bewusst noch kurz stehen, statt sofort zu disponieren. Gemessen auf demselben
 Zielwert, den OR-Tools tatsächlich minimiert (gewichtete Fertigstellungszeit +
 Verspätung, nicht die angezeigte Gesamtdurchlaufzeit) - geschweept über 4
-Szenario-Familien x 15 Seeds: schließt jetzt 25-39% der verbleibenden Lücke zu
-OR-Tools (vorher, ohne Lookahead: 14-33%), bei bis zu ~3,9s Laufzeit am oberen Ende
-der Regler - noch akzeptabel, um wie die anderen drei eigenen Verfahren direkt
+Szenario-Familien: schließt jetzt grob 25-35% der verbleibenden Lücke zu
+OR-Tools (vorher, ohne Lookahead: grob 15-30%; Nachmessung mit je 6 Seeds und 5 s
+OR-Tools-Zeitlimit: Familienmittel 23-36% bzw. 18-27%, der ursprüngliche 15-Seed-Sweep
+ist nicht reproduziert), bei etwa 3-4s Laufzeit am oberen Ende der Regler
+(CPU-Zeit, rechnerabhängig) - noch akzeptabel, um wie die anderen drei eigenen Verfahren direkt
 mitzulaufen, ganz ohne Button/Cooldown wie bei OR-Tools. Ein alternativer Versuch,
 stattdessen die lokale Suche selbst durch echte Swap-Züge plus Iterated-Local-Search
 zu ersetzen, brachte dagegen KEINE verlässliche Verbesserung bei fast doppelter
@@ -611,9 +614,8 @@ starten, wenn Leg 1 in einer anderen Zone fertig ist) - eher mehrstufige
 Job-Shop-Struktur als eine einzelne Fahrzeugtour. Diese Transfer-Synchronisation ist in
 der VRP-Literatur selbst ein anerkanntes Teilgebiet - "VRP with Synchronization
 Constraints" (Übersichtsartikel: Drexl 2012) bzw., noch konkreter für eine
-Hub-Hierarchie aus verschiedenen Fahrzeugflotten, das Multi-Echelon-VRP
-(Übersichtsartikel: Cuda/Guastaroba/Speranza 2015); PDPT wird dort meist als Unterfall
-genau wegen dieser Transfer-Synchronisation geführt, nicht als Nebenaspekt. Deshalb
+Hub-Hierarchie aus verschiedenen Fahrzeugflotten, das Two-Echelon-Routing
+(Übersichtsartikel: Cuda/Guastaroba/Speranza 2015); PDPT ist ein typisches Beispiel für genau diese Transfer-Synchronisation, kein Nebenaspekt. Deshalb
 baut Koordiniert unten auf einer Scheduling-Regel (ATCS) statt einer klassischen
 Tourenplanungs-Heuristik auf - beide Sichtweisen beschreiben dieselbe zugrunde
 liegende Kombinatorik, nur mit unterschiedlichem Fokus.
@@ -672,9 +674,7 @@ Signal nutzt. Koordiniert, GRASP (über denselben ATCS-Index) und OR-Tools tun d
   Transporter gerade stehen - es kann einen Shuttle quer durchs Lager schicken, wenn dessen
   Leg nominell am kürzesten ist, egal wie weit die Leerfahrt dorthin wäre.
 - **Koordiniert:** kein Formel-Sammelsurium mehr, sondern eine literaturbekannte
-  Dispatching-Regel - **ATCS (Apparent Tardiness Cost with Setups)**, entwickelt für
-  genau diese Problemklasse (parallele Maschinen, sequenzabhängige Rüstzeiten,
-  Fristen). Der Index kombiniert drei Signale multiplikativ statt additiv: SPT
+  Dispatching-Regel - **ATCS (Apparent Tardiness Cost with Setups)**, für gewichtete Verspätung mit sequenzabhängigen Rüstzeiten entwickelt (Lee/Bhaskaran/Pinedo 1997, eine Maschine) und auf parallele Maschinen erweitert (Lee/Pinedo 1997) - also genau diese Problemklasse (parallele Maschinen, sequenzabhängige Rüstzeiten, Fristen). Der Index kombiniert drei Signale multiplikativ statt additiv: SPT
   (Gewicht/Fahrzeit), eine Exponentialfunktion, die mit schrumpfendem Zeitpuffer
   wächst, und eine zweite Exponentialfunktion, die mit wachsender Repositionierdistanz
   zum nächsten freien Transporter schrumpft. Zwei frühere Fassungen wurden verworfen:
@@ -699,12 +699,13 @@ Signal nutzt. Koordiniert, GRASP (über denselben ATCS-Index) und OR-Tools tun d
   (0,75 min): vor jeder Zuweisung ein kurzer Blick, ob gleich ein deutlich
   dringenderer Leg bereit wird - wenn ja, bleibt der Transporter bewusst noch kurz
   stehen ("eingefügte Leerzeit"), statt sofort zu disponieren. Das adressiert direkt
-  einen nachgeprüften Grund für die Lücke: 6 von 37 nachweislich optimalen
-  OR-Tools-Lösungen an einem Hub-Engpass lassen den Transporter genau so bewusst
-  leer stehen. Gemessen am Zielwert, den auch OR-Tools minimiert (gewichtete
+  einen nachgeprüften Grund für die Lücke: ein Teil der nachweislich optimalen
+  OR-Tools-Lösungen an einem Hub-Engpass lässt den Transporter genau so bewusst
+  leer stehen (Nachmessung: 10 von 37 kleinen Szenarien). Gemessen am Zielwert, den auch OR-Tools minimiert (gewichtete
   Fertigstellungszeit + Verspätung): schlägt Koordiniert fast immer und schließt
-  einen Teil (geschweept: 25-39%, ohne Lookahead nur 14-33%) der verbleibenden
-  Lücke zu OR-Tools, bei bis zu ~3,9s Laufzeit am oberen Ende der Regler.
+  einen Teil (grob 25-35%, ohne Lookahead grob 15-30%; Nachmessung auf vier
+  Szenario-Familien mit je 6 Seeds, nicht der ursprüngliche Sweep) der verbleibenden
+  Lücke zu OR-Tools, bei etwa 3-4s CPU-Zeit am oberen Ende der Regler (rechnerabhängig).
 - **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer. Weil Repositionierung
   davon abhängt, WELCHER Transporter einen Leg übernimmt, sind Transporter hier keine
   anonyme Kapazität mehr wie zuvor ohne Repositionierung: jeder Leg bekommt eine
@@ -850,8 +851,8 @@ wird nicht die angezeigte Gesamtdurchlaufzeit, sondern derselbe gewichtete
 Zielwert wie oben (Fertigstellungszeit + Verspätungsstrafe), damit "Lücke zu OR-Tools
 schließen" auf der Größe gemessen ist, die OR-Tools tatsächlich minimiert. Geschweept über
 4 Szenario-Familien x 15 Seeds bei GRASP_ITERATIONS=150, RCL_SIZE=4,
-LOCAL_SEARCH_MOVES=400: schlägt Koordiniert auf fast jedem Seed und schließt 14-33% der
-Lücke zu OR-Tools, bei bis zu ~2s Laufzeit an den Regler-Obergrenzen - ein größeres Budget
+LOCAL_SEARCH_MOVES=400: schlägt Koordiniert auf fast jedem Seed und schloss vor Einführung des
+Lookahead-Fensters grob 15-30% der Lücke zu OR-Tools, bei etwa 2-3s Laufzeit an den Regler-Obergrenzen - ein größeres Budget
 (300/800) brachte in der Sweep-Messung nur noch marginal mehr bei etwa doppelter Laufzeit.
 
 Zusätzlich bekommt jeder `simulate_dispatch`-Aufruf in GRASP ein Lookahead-Fenster
@@ -862,15 +863,18 @@ SEINER eigenen künftigen Bereitzeit) den aktuell besten bereiten Leg schlägt. 
 bleibt der Transporter bewusst stehen, statt sofort zu disponieren - der Simulator
 selbst dispatcht sonst immer sofort (Non-Delay), sobald Transporter UND ein bereiter
 Leg existieren, und kann daher von sich aus nie "warten". Direkt an echten
-OR-Tools-Lösungen nachgeprüft, dass das kein Kunstgriff ist: 6 von 37 nachweislich
-optimalen CP-SAT-Lösungen an einem Hub-Engpass-Szenario lassen den einzigen
-Hub-Transporter bewusst leer stehen, obwohl schon ein Auftrag bereitstand -
+OR-Tools-Lösungen nachgeprüft, dass das kein Kunstgriff ist: ein Teil der nachweislich
+optimalen CP-SAT-Lösungen an einem Hub-Engpass-Szenario lässt den einzigen
+Hub-Transporter bewusst leer stehen, obwohl schon ein Auftrag bereitstand
+(Nachmessung: 10 von 37 kleinen Szenarien; die frühere Zählung "6 von 37" ist nicht reproduziert) -
 "eingefügte Leerzeit" (inserted idle time), ein klassisches Ergebnis der
 Scheduling-Theorie: bei einer GEWICHTETEN Zielgröße ist die optimale Lösung nicht
-immer ein Non-Delay-Schedule. Geschweept (0-2 min Fensterbreite, dieselben 4
-Szenario-Familien x 15 Seeds): 0,75 min schließt jetzt 25-39% der Lücke zu OR-Tools
-(vorher, ohne Fenster: 14-33%) in JEDER Familie, bei bis zu ~3,9s Laufzeit an den
-Regler-Obergrenzen - größere Fenster (ab ca. 1,5 min) geben einen Teil des Gewinns
+immer ein Non-Delay-Schedule. Geschweept (0-2 min Fensterbreite, 4
+Szenario-Familien): 0,75 min schließt jetzt grob 25-35% der Lücke zu OR-Tools
+(vorher, ohne Fenster: grob 15-30%; Nachmessung mit je 6 Seeds: Familienmittel 23-36% bzw.
+18-27%, in drei von vier Familien besser, in einer leicht schlechter - der ursprüngliche
+15-Seed-Sweep ist nicht reproduziert), bei etwa 3-4s CPU-Zeit an den
+Regler-Obergrenzen (rechnerabhängig) - größere Fenster (ab ca. 1,5 min) geben einen Teil des Gewinns
 wieder her (zu viel unbegründetes Warten). Ein separater Versuch, stattdessen die
 Lokalsuche selbst durch echte Swap-Züge einer Rangfolge je Zone plus Iterated Local
 Search (Shake-and-Restart) zu ersetzen, brachte KEINE verlässliche Verbesserung bei

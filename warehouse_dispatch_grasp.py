@@ -18,8 +18,9 @@ gets a chance to do.
 Look-ahead (added 2026-09-03): every `simulate_dispatch` call here (both
 construction and local search) also passes `lookahead_window=LOOKAHEAD_WINDOW`.
 Verified directly on real OR-Tools solutions that this targets a genuine,
-provable source of the gap: 6 of 37 proven-OPTIMAL CP-SAT solutions checked
-on a hub-bottleneck instance left the sole hub transporter idle for a moment
+provable source of the gap: a share of proven-OPTIMAL CP-SAT solutions checked
+on hub-bottleneck instances (re-measured: 10 of 37 small instances; the earlier count of
+"6 of 37" was not reproduced) left the sole hub transporter idle for a moment
 even though a leg was already ready and waiting ("inserted idle time" -  a
 classical, well-known reason non-delay schedules can be suboptimal for a
 WEIGHTED objective like this one's). `simulate_dispatch`'s own non-delay
@@ -68,8 +69,10 @@ from warehouse_evaluation import due_time_for_order
 # Swept against coordinated/OR-Tools across 4 scenario families x 15 seeds
 # (default, hub bottleneck, express-heavy, large): 150/400/4 wins against
 # coordinated on almost every seed (0-1 losses per family out of 15) and
-# closes 14-33% of the remaining gap to OR-Tools' objective value, at up to
-# ~2s runtime at the sliders' absolute maximum (60 orders, 5 aisles, 8
+# closed roughly 15-30% of the remaining gap to OR-Tools' objective value
+# (original sweep; its exact family definitions are not in the repo - a 6-seed
+# re-measurement gave family means of 18-27%), at roughly 2-3s runtime at the
+# sliders' absolute maximum (60 orders, 5 aisles, 8
 # nodes/aisle) - fast enough to run inline like the other three heuristics,
 # no button/cooldown needed the way OR-Tools has. Doubling the budget again
 # (300/800) only pushed gap-closure from ~14-26% to ~14-33% while roughly
@@ -80,11 +83,11 @@ LOCAL_SEARCH_MOVES = 400
 BIAS_SCALE = 0.5  # fraction of p_bar a single perturbation can shift one leg's priority by
 
 # Swept separately (0.0-2.0 minutes) on top of the above, same 4 families x
-# 15 seeds: 0.75 min consistently pushed gap-closure from 14-33% to 25-39%
-# in EVERY family (never a regression, unlike most windows tested alone on
-# plain Koordiniert without GRASP's construction/local-search diversity
-# underneath it) - runtime rises to ~3.9s at the sliders' absolute maximum
-# (from ~2s), still acceptable to run inline. Windows above ~1.5 start
+# 15 seeds: 0.75 min pushed gap-closure from roughly 15-30% to roughly 25-35%
+# (a 6-seed re-measurement on four similar families: family means 23-36% vs.
+# 18-27%, better in three families, slightly worse in one; the original
+# 15-seed sweep is not reproduced) - runtime rises to roughly 3-4s CPU time at
+# the sliders' absolute maximum (machine-dependent; from ~2-3s), still acceptable to run inline. Windows above ~1.5 start
 # giving some of the gain back (too much unjustified waiting).
 LOOKAHEAD_WINDOW = 0.75
 
