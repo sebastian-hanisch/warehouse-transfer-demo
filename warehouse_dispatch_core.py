@@ -99,6 +99,10 @@ import heapq
 import itertools
 from dataclasses import dataclass
 
+# Events closer together than this (minutes) count as the same instant: equal sums of
+# floats reached along different paths differ in the last bits.
+SAME_INSTANT_EPS = 1e-9
+
 
 @dataclass
 class LegAssignment:
@@ -262,17 +266,30 @@ def simulate_dispatch(network, routes, orders, transporters_per_zone, handover_m
                 )
 
     while events:
+        # All events at the same instant are applied BEFORE any dispatch decision
+        # (a transporter that frees up at t must see a leg that becomes ready at
+        # t, and vice versa; otherwise the heap's insertion order alone decides
+        # which candidates or transporters a decision gets to see). Such exact
+        # ties are structural here: queues in series put every downstream time on
+        # one common grid of release time + multiples of leg and handover times.
         time, _, kind, payload = heapq.heappop(events)
-        if kind == "ready":
-            order_id, leg_index, ready_time = payload
-            route = routes[order_id]
-            leg = route.legs[leg_index]
-            zone_id = leg.zone_id
-            ready_queue[zone_id].append((order_id, leg_index, ready_time))
-            try_match(zone_id, time)
-        elif kind == "free":
-            zone_id, transporter_id, position = payload
-            idle[zone_id].append(_TransporterState(id=transporter_id, position=position, free_at=time))
-            try_match(zone_id, time)
+        batch = [(time, kind, payload)]
+        while events and events[0][0] <= time + SAME_INSTANT_EPS:
+            t2, _, kind2, payload2 = heapq.heappop(events)
+            batch.append((t2, kind2, payload2))
+        now = batch[-1][0]
+        touched = []
+        for event_time, kind, payload in batch:
+            if kind == "ready":
+                order_id, leg_index, ready_time = payload
+                zone_id = routes[order_id].legs[leg_index].zone_id
+                ready_queue[zone_id].append((order_id, leg_index, ready_time))
+            else:  # "free"
+                zone_id, transporter_id, position = payload
+                idle[zone_id].append(_TransporterState(id=transporter_id, position=position, free_at=event_time))
+            if zone_id not in touched:
+                touched.append(zone_id)
+        for zone_id in touched:
+            try_match(zone_id, now)
 
     return Schedule(method=method_name, assignments=assignments)

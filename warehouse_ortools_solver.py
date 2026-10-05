@@ -62,7 +62,22 @@ OBJECTIVE_SCALE = 100
 
 def solve_ortools(network, routes, orders, transporters_per_zone, handover_minutes, time_limit_seconds, horizon_minutes):
     model = cp_model.CpModel()
-    horizon = max(int(horizon_minutes * 10 * SCALE), 1000)
+    # The start-time domain must contain every semi-active schedule (one of them is
+    # optimal): each start is the end of a chain of tight constraints that begins at
+    # a release time and uses every leg at most once, so no start lies beyond
+    # latest release + all leg durations + per leg one handover and one longest
+    # repositioning. A bare "10 x the order horizon" is far too short for many
+    # orders in a short horizon (60 orders / 10 min: the solver declared solvable
+    # instances infeasible), so the larger of the two values is used.
+    n_legs = sum(len(routes[order.order_id].legs) for order in orders)
+    longest_reposition = max(
+        (network.travel_time(zone_id, a, b) for zone_id, zone in network.zones.items() for a in zone.nodes for b in zone.nodes),
+        default=0.0,
+    )
+    safe_bound = max((order.release_time for order in orders), default=0.0) + sum(
+        leg.travel_time for order in orders for leg in routes[order.order_id].legs
+    ) + n_legs * (handover_minutes + longest_reposition)
+    horizon = max(int(horizon_minutes * 10 * SCALE), math.ceil(safe_bound * SCALE) + 1, 1000)
     # Round release/handover/repositioning UP when discretizing to integer
     # time units, so the reconstructed float schedule never starts before
     # the true (continuous) requirement - only rounding leg duration itself
