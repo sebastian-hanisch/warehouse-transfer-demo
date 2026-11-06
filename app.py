@@ -246,6 +246,17 @@ Formalisierung im Expander "📐 Mathematische Formulierung".
 """
 )
 
+# erklaerseite:einfach:start (erzeugt von tools/set_demo_explainer.py (Website-Repo) aus tools/content/explainers/umschlagpunkte-erklaert.json, nicht von Hand ändern)
+with st.expander("💬 In einfachen Worten"):
+    st.markdown(
+        """
+Ware wird durch ein automatisiertes Hochregallager bewegt. Jeder Transporter bleibt in seiner Zone, einer Regalgasse oder dem zentralen Verteiler. Muss ein Auftrag von einer Gasse in eine andere, wechselt er an **Umschlagpunkten** den Transporter, und jede Übergabe kostet Zeit. Wer gerade abgeliefert hat, fährt leer zur nächsten Abholung. Die Demo vergleicht fünf Verfahren, die entscheiden, welche Teilfahrt ein freier Transporter als Nächstes übernimmt: ohne Regel, je Zone nach kürzester Fahrzeit, koordiniert mit einer Regel aus der Ablaufplanung, durch zufälliges Durchprobieren und mit einem exakten Rechenprogramm. Gemessen wird die Summe aller Durchlaufzeiten. Gezeigt wird, wo die lokal beste Entscheidung das Gesamtergebnis verschlechtert und warum ein Transporter manchmal bewusst wartet.
+
+[Ausführlich und verständlich erklärt, mit Fachteil](https://sebastianhanisch.net/umschlagpunkte-erklaert.html)
+        """
+    )
+# erklaerseite:einfach:end
+
 st.caption("🎯 Schnellstart – ein Beispielszenario laden:")
 preset_cols = st.columns(len(PRESET_BUTTONS))
 for col, name in zip(preset_cols, PRESET_BUTTONS):
@@ -743,6 +754,29 @@ Dispositionsverfahren bleibt aber dasselbe.
     )
 
 with st.expander("📐 Mathematische Formulierung"):
+    # erklaerseite:lesehilfe:start (erzeugt von tools/set_demo_explainer.py (Website-Repo) aus tools/content/explainers/umschlagpunkte-erklaert.json, nicht von Hand ändern)
+    st.markdown(
+        r"""
+**Lesehilfe.** Gegeben sind Aufträge mit Freigabezeit und Frist, Zonen mit je einer festen Zahl von Transportern und eine feste Umstiegszeit. Gesucht sind Startzeiten aller Teilfahrten, die die gewichtete Summe der Durchlaufzeiten plus eine Verspätungsstrafe möglichst klein machen.
+
+| Symbol | Bedeutung |
+|---|---|
+| $o$, $\ell$ | Auftrag bzw. Teilfahrt eines Auftrags (eine oder drei je Auftrag) |
+| $d_{o,\ell}$ | feste Fahrzeit der Teilfahrt $\ell$ von Auftrag $o$ |
+| $r_o$, $\delta_o$ | Freigabezeit bzw. Frist von Auftrag $o$ |
+| $w_o$ | Gewicht des Auftrags (Express-Aufträge zählen mehr) |
+| $h$ | feste Umstiegszeit an einem Umschlagpunkt |
+| $c_z$ | Zahl der Transporter in Zone $z$ |
+| $s_{o,\ell}$ | gesuchter Startzeitpunkt der Teilfahrt |
+| $\rho$ | Fahrzeit der Leerfahrt zwischen zwei Knoten |
+| $I(o,\ell)$ | Prioritätsindex der koordinierten Regel (höher heißt dringender) |
+| $\sigma_{o,\ell}$ | verbleibender Zeitpuffer bis zur Frist |
+| $K_1$, $K_2$ | Abklingparameter der beiden Exponentialfaktoren |
+
+[Schritt für Schritt erklärt, mit Herleitung und Literatur](https://sebastianhanisch.net/umschlagpunkte-erklaert.html#fachleute)
+        """
+    )
+    # erklaerseite:lesehilfe:end
     st.markdown(
         r"""
 **In Worten, vor der Notation:** Gesucht ist für jeden Leg jedes Auftrags ein Startzeitpunkt,
