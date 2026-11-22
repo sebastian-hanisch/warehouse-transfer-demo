@@ -28,7 +28,7 @@ einzeln mit Position geführt (nicht nur als Kapazitätszahl) - wer gerade abgel
 hat, muss leer zum nächsten Einsatzort fahren (Repositionierung), genau wie ein echtes
 Shuttle/AGV.
 
-Fünf Dispositionsverfahren im Vergleich: Unoptimiert (FCFS), Dezentral je Zone
+Fünf Dispatching-Verfahren im Vergleich: Unoptimiert (FCFS), Dezentral je Zone
 (Greedy: lokales SPT je Leg, blind für Repositionierungskosten), Koordiniert (ATCS -
 Apparent Tardiness Cost with Setups, eine literaturbekannte Dispatching-Regel aus der
 Scheduling-Forschung für genau diese Problemstruktur: parallele Maschinen mit
@@ -45,9 +45,9 @@ Vergleichscharts. Koordiniert, GRASP und OR-Tools blenden zusätzlich einen klei
 Verspätungs-/Dringlichkeitsterm mit ein (Details unten je Verfahren) -
 Gesamtdurchlaufzeit bleibt dominant, Pünktlichkeit ist kein zweites, gleichrangiges
 Ziel, sondern ein mitgewichteter Nebenaspekt derselben Zielfunktion. Kernthema: lokal
-optimale Disposition je Zone erzeugt an Umschlagpunkten Wartezeit, die sich
-kaskadenartig fortpflanzt und die Gesamtdurchlaufzeit verschlechtert - eine
-zonenübergreifend koordinierte Disposition vermeidet das systematisch.
+optimales Dispatching je Zone erzeugt an Umschlagpunkten Wartezeit, die sich
+kaskadenartig fortpflanzt und die Gesamtdurchlaufzeit verschlechtert - ein
+zonenübergreifend koordiniertes Dispatching vermeidet das systematisch.
 
 Koordiniert hat drei Anläufe gebraucht, dokumentiert in
 `warehouse_dispatch_coordinated.py`, weil jede plausibel klingende Formel erst
@@ -76,11 +76,11 @@ Hub-Transporter bewusst kurz leer stehen, obwohl schon ein Auftrag bereitstand
 (Nachmessung an 37 kleinen Engpass-Szenarien: 10 von 37 bei 8 Aufträgen, 15 von 37 bei
 10 Aufträgen; die frühere Zählung "6 von 37" ist nicht reproduziert) -
 "eingefügte Leerzeit", ein klassischer Grund, warum ein Non-Delay-Verfahren (immer
-sofort disponieren, sobald möglich) bei einer GEWICHTETEN Zielgröße strukturell nicht
+sofort dispatchen, sobald möglich) bei einer GEWICHTETEN Zielgröße strukturell nicht
 mithalten kann. GRASP bekam deshalb zusätzlich ein Lookahead-Fenster
 (`lookahead_window`, 0,75 Minuten): vor jeder Zuweisung ein kurzer Blick, ob in diesem
 Fenster ein deutlich dringenderer Leg bereit wird - wenn ja, bleibt der Transporter
-bewusst noch kurz stehen, statt sofort zu disponieren. Gemessen auf demselben
+bewusst noch kurz stehen, statt sofort zu dispatchen. Gemessen auf demselben
 Zielwert, den OR-Tools tatsächlich minimiert (gewichtete Fertigstellungszeit +
 Verspätung, nicht die angezeigte Gesamtdurchlaufzeit) - geschweept über 4
 Szenario-Familien: schließt jetzt grob 25-35% der verbleibenden Lücke zu
@@ -93,7 +93,7 @@ stattdessen die lokale Suche selbst durch echte Swap-Züge plus Iterated-Local-S
 zu ersetzen, brachte dagegen KEINE verlässliche Verbesserung bei fast doppelter
 Laufzeit und wurde wieder verworfen (siehe Git-Historie von
 `warehouse_dispatch_grasp.py`) - das Lookahead-Fenster wirkt auf einer ganz anderen,
-unabhängigen Achse (WANN disponiert wird, nicht WELCHER Kandidat gewinnt) und ist
+unabhängigen Achse (WANN dispatcht wird, nicht WELCHER Kandidat gewinnt) und ist
 deshalb kein Widerspruch zu diesem negativen Befund.
 
 Ein Anteil der Aufträge kann als Express markiert werden (engere Frist). Nur Koordiniert
@@ -114,7 +114,7 @@ Selbe Struktur wie bei den anderen Demos in diesem Workspace: Ergebnis zuerst,
 vollständiger Methodenvergleich sekundär im Expander, dazu "Wie funktioniert diese
 Demo?" und "Mathematische Formulierung" als eigene Expander.
 
-Code-Struktur: Modell, Dispositionsverfahren, Kennzahlen, PDF-Export und
+Code-Struktur: Modell, Dispatching-Verfahren, Kennzahlen, PDF-Export und
 Visualisierung liegen in den Modulen warehouse_*.py neben dieser Datei.
 """
 
@@ -169,7 +169,7 @@ PRESET_BUTTONS = {
     "Stoßzeit mit Engpass am Umschlagpunkt": (
         "⚠️",
         "Nur ein Hub-Transporter, viele zonenübergreifende Aufträge – die Lücke zwischen "
-        "dezentraler und koordinierter Disposition ist hier am deutlichsten sichtbar "
+        "dezentralem und koordiniertem Dispatching ist hier am deutlichsten sichtbar "
         "(bewusst geprüft, nicht zufällig getroffen).",
     ),
     "Großes Lager": (
@@ -236,9 +236,9 @@ Gassen-Shuttle auf den Hub-Transporter umgeladen und später am Zielgassen-Ansch
 einmal - jede dieser Übergaben ist ein **Umschlagpunkt**. Transporter sind dabei keine
 anonyme Kapazitätszahl, sondern haben eine reale Position: wer gerade abgeliefert hat, muss
 leer zur nächsten Abholung fahren (**Repositionierung**), bevor er wieder Ladung aufnehmen
-kann. Kernthema ist, wie stark **lokal optimale Disposition je Zone** an Umschlagpunkten
+kann. Kernthema ist, wie stark **lokal optimales Dispatching je Zone** an Umschlagpunkten
 Wartezeit erzeugt und Transporter unnötig durchs Lager schickt - beides pflanzt sich
-kaskadenartig fort - und wie viel eine **zonenübergreifend koordinierte Disposition** davon
+kaskadenartig fort - und wie viel ein **zonenübergreifend koordiniertes Dispatching** davon
 vermeidet, *ohne* dabei die Gesamtdurchlaufzeit zu verschlechtern. Ein konkretes
 Beispiel dazu im Abschnitt "📐 Warum lokale Optimierung an Umschlagpunkten scheitert" unten,
 der komplette Ablauf eines Auftrags im Expander "Wie funktioniert diese Demo?" sowie die
@@ -303,7 +303,7 @@ with st.sidebar:
         "Transporter im Hub", *bounds("trans_hub_slider"), key="trans_hub_slider",
         help="Wie viele Transporter gleichzeitig im zentralen Verteiler unterwegs sein "
              "dürfen. Ein einzelner Hub-Transporter ist in diesem Modell der typische "
-             "Engpass, an dem sich lokale und koordinierte Disposition am stärksten "
+             "Engpass, an dem sich lokales und koordiniertes Dispatching am stärksten "
              "unterscheiden.",
     )
     handover = st.slider(
@@ -328,9 +328,9 @@ with st.sidebar:
     express = st.slider(
         "Anteil Express-Aufträge", *bounds("express_slider"), key="express_slider",
         help="Anteil der Aufträge mit engerer Frist. Nur Koordiniert, GRASP und OR-Tools nutzen "
-             "das als Dispositionssignal und ziehen Express-Aufträge konsequent vor - "
+             "das als Dispatching-Signal und ziehen Express-Aufträge konsequent vor - "
              "Unoptimiert und Dezentral/Greedy ignorieren es bewusst, genau wie ein rein "
-             "lokales System in der Praxis oft an gesetzten Prioritäten vorbeidisponiert.",
+             "lokales System in der Praxis oft an gesetzten Prioritäten vorbei dispatcht.",
     )
     seed_lo, seed_hi = bounds("seed_input")
     seed = st.number_input("Zufalls-Seed", min_value=seed_lo, max_value=seed_hi, step=1, key="seed_input")
@@ -379,8 +379,8 @@ m4.metric("Letzte Auslieferung", f"{coordinated_eval.makespan:.0f} min")
 
 if lead_reduction > 0:
     st.success(
-        f"💡 Im Vergleich zur dezentralen Disposition (jede Zone optimiert nur für sich) spart die "
-        f"zonenübergreifend koordinierte Disposition rund **{lead_reduction:.0f} Minuten Gesamtdurchlaufzeit** "
+        f"💡 Im Vergleich zum dezentralen Dispatching (jede Zone optimiert nur für sich) spart das "
+        f"zonenübergreifend koordinierte Dispatching rund **{lead_reduction:.0f} Minuten Gesamtdurchlaufzeit** "
         f"({lead_reduction_pct:.0f}% weniger) - Verfahren: {METHOD_LABELS[METHOD_COORDINATED]}. Wie das gelingt, "
         f"zeigt der Abschnitt unten."
     )
@@ -416,7 +416,7 @@ fertig ist und ihn diese Verspätung härter trifft. **Koordiniert** dämpft die
 Legs mit einer Exponentialfunktion über den verbleibenden Zeitpuffer bis zur Frist (Teil der
 ATCS-Regel, Details im Math-Expander) - A's bereits angeknabberter Puffer macht seinen Leg
 dringlicher, genug, um den knappen Vorsprung zurückzubekommen, ohne dass Koordiniert deshalb
-insgesamt schlechter disponiert als Greedy: SPT bleibt der dominante Faktor, weil es für die
+insgesamt schlechter dispatcht als Greedy: SPT bleibt der dominante Faktor, weil es für die
 Gesamtdurchlaufzeit einer einzelnen Ressource nachweislich das Beste ist.
 
 **Ein zweites Beispiel zeigt, warum Greedy auch bei der reinen Gesamtdurchlaufzeit
@@ -567,7 +567,7 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
 
         st.plotly_chart(build_kpi_comparison_figure(compare_evals), width='stretch', key="kpi_comparison")
         st.caption(
-            "Einzige Kennzahl, auf die hin disponiert wird: die Gesamtdurchlaufzeit. Die Aufschlüsselung "
+            "Einzige Kennzahl, auf die hin dispatcht wird: die Gesamtdurchlaufzeit. Die Aufschlüsselung "
             "darunter zeigt, woraus sie sich zusammensetzt."
         )
         st.plotly_chart(build_lead_time_composition_figure(compare_evals, handover), width='stretch', key="composition_compare")
@@ -590,7 +590,7 @@ with st.expander("🔧 Wie wir das erreichen – vollständiger Methodenvergleic
         if has_express:
             st.caption(
                 "🚀 Express-Aufträge sind in der Auftragstabelle jedes Verfahrens markiert. Nur Koordiniert, "
-                "GRASP und OR-Tools nutzen die Markierung als Dispositionssignal - Unoptimiert und Dezentral/Greedy "
+                "GRASP und OR-Tools nutzen die Markierung als Dispatching-Signal - Unoptimiert und Dezentral/Greedy "
                 "ignorieren sie bewusst."
             )
 
@@ -672,11 +672,11 @@ seiner Länge mehr absolute Luft bekommt als ein kurzer, egal ob Normal oder Exp
 ist nicht die Frist selbst, sondern wer sie überhaupt beachtet: Unoptimiert und Dezentral/Greedy
 ignorieren die Markierung bewusst - beide bleiben bei ihrer jeweiligen Logik (Ankunftsreihenfolge bzw.
 kürzeste Fahrzeit), egal ob ein Auftrag als dringend markiert ist oder nicht. Das ist keine
-Vereinfachung, sondern der Punkt: ein rein lokales oder unkoordiniertes System disponiert in
+Vereinfachung, sondern der Punkt: ein rein lokales oder unkoordiniertes System dispatcht in
 der Praxis oft tatsächlich an gesetzten Prioritäten vorbei, weil es sie schlicht nicht als
 Signal nutzt. Koordiniert, GRASP (über denselben ATCS-Index) und OR-Tools tun das dagegen aktiv (Details unten je Verfahren).
 
-**Fünf Dispositionsverfahren, alle mit derselben Kennzahlen-Berechnung ausgewertet:**
+**Fünf Dispatching-Verfahren, alle mit derselben Kennzahlen-Berechnung ausgewertet:**
 - **Unoptimiert (FCFS):** keine Prioritätslogik, wer zuerst bereit ist, wird zuerst bedient.
 - **Dezentral/Greedy:** jede Zone dispatcht lokal nach kürzester Fahrzeit des aktuellen Legs
   (Shortest Processing Time, SPT) - für eine einzelne Ressource nachweislich optimal zur
@@ -699,7 +699,7 @@ Signal nutzt. Koordiniert, GRASP (über denselben ATCS-Index) und OR-Tools tun d
   dieselbe Konstante wie bei OR-Tools unten) statt eines eigenen Faktors.
 - **GRASP (Greedy Randomized Adaptive Search Procedure, Feo/Resende):** baut auf
   Koordiniert's ATCS-Index auf, statt sie zu ersetzen. Konstruktionsphase: dieselbe
-  ATCS-Formel, aber jede Dispositionsentscheidung wählt zufällig aus den RCL_SIZE
+  ATCS-Formel, aber jede Dispatching-Entscheidung wählt zufällig aus den RCL_SIZE
   bestbewerteten bereiten Legs statt strikt dem besten (eine "Restricted Candidate
   List") - 150 unabhängige, randomisierte Simulationsläufe, der beste wird behalten.
   Lokale Suche danach: bis zu 400 zufällige Ein-Leg-Störungen der Priorität, jede neu
@@ -709,7 +709,7 @@ Signal nutzt. Koordiniert, GRASP (über denselben ATCS-Index) und OR-Tools tun d
   revidieren, was ATCS selbst strukturell nie kann. Zusätzlich ein Lookahead-Fenster
   (0,75 min): vor jeder Zuweisung ein kurzer Blick, ob gleich ein deutlich
   dringenderer Leg bereit wird - wenn ja, bleibt der Transporter bewusst noch kurz
-  stehen ("eingefügte Leerzeit"), statt sofort zu disponieren. Das adressiert direkt
+  stehen ("eingefügte Leerzeit"), statt sofort zu dispatchen. Das adressiert direkt
   einen nachgeprüften Grund für die Lücke: ein Teil der nachweislich optimalen
   OR-Tools-Lösungen an einem Hub-Engpass lässt den Transporter genau so bewusst
   leer stehen (Nachmessung: 10 von 37 kleinen Szenarien). Gemessen am Zielwert, den auch OR-Tools minimiert (gewichtete
@@ -736,7 +736,7 @@ Signal nutzt. Koordiniert, GRASP (über denselben ATCS-Index) und OR-Tools tun d
 
 **Kern-Kennzahl:** Die **Gesamtdurchlaufzeit** (Summe bzw. Durchschnitt über
 alle Auftrags-Durchlaufzeiten) - das Hauptkriterium, nach dem alle fünf Verfahren
-disponieren und verglichen werden. Umstiegs-Wartezeit und Repositionierung sind keine
+dispatchen und verglichen werden. Umstiegs-Wartezeit und Repositionierung sind keine
 eigenen Ziele, sondern Ursachen, die sich in dieser einen Zahl niederschlagen; die
 Aufschlüsselungs-Diagramme oben und im Vergleichstab zeigen nur, WORAUS sie sich
 zusammensetzt. Koordiniert, GRASP und OR-Tools blenden zusätzlich einen kleinen
@@ -749,7 +749,7 @@ von der Gesamtpünktlichkeit.
 **In einem echten Lager** kämen weitere Nebenbedingungen dazu (Batterie-/Ladezyklen der
 Shuttles, mehrstöckige Hub-Topologien, tatsächliche Kollisionsvermeidung innerhalb einer
 Gasse) - das Grundprinzip aus Zonenbindung, Umschlagpunkten und den fünf
-Dispositionsverfahren bleibt aber dasselbe.
+Dispatching-Verfahren bleibt aber dasselbe.
 """
     )
 
@@ -894,7 +894,7 @@ Zusätzlich bekommt jeder `simulate_dispatch`-Aufruf in GRASP ein Lookahead-Fens
 weiterhin, WELCHER bereite Leg gewinnt - aber vor jeder Zuweisung prüft die Simulation
 zusätzlich, ob innerhalb des Fensters ein Leg bereit wird, dessen Wert (bewertet zu
 SEINER eigenen künftigen Bereitzeit) den aktuell besten bereiten Leg schlägt. Wenn ja,
-bleibt der Transporter bewusst stehen, statt sofort zu disponieren - der Simulator
+bleibt der Transporter bewusst stehen, statt sofort zu dispatchen - der Simulator
 selbst dispatcht sonst immer sofort (Non-Delay), sobald Transporter UND ein bereiter
 Leg existieren, und kann daher von sich aus nie "warten". Direkt an echten
 OR-Tools-Lösungen nachgeprüft, dass das kein Kunstgriff ist: ein Teil der nachweislich
@@ -913,7 +913,7 @@ wieder her (zu viel unbegründetes Warten). Ein separater Versuch, stattdessen d
 Lokalsuche selbst durch echte Swap-Züge einer Rangfolge je Zone plus Iterated Local
 Search (Shake-and-Restart) zu ersetzen, brachte KEINE verlässliche Verbesserung bei
 fast doppelter Laufzeit und wurde wieder verworfen - das Lookahead-Fenster wirkt auf
-einer unabhängigen Achse (WANN disponiert wird, nicht WELCHER Kandidat gewinnt) und
+einer unabhängigen Achse (WANN dispatcht wird, nicht WELCHER Kandidat gewinnt) und
 steht dazu nicht im Widerspruch.
 """
     )

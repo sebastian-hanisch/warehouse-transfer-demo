@@ -30,9 +30,9 @@ Cuda/Guastaroba/Speranza 2015); PDPT ist ein typisches Beispiel für genau diese
 einer Scheduling-Regel (ATCS) statt einer klassischen Tourenplanungs-Heuristik auf, obwohl
 beide Sichtweisen dieselbe zugrunde liegende Kombinatorik beschreiben.
 
-Der Fokus der Demo: **lokal optimale Disposition je Zone erzeugt an Umschlagpunkten
+Der Fokus der Demo: **lokal optimales Dispatching je Zone erzeugt an Umschlagpunkten
 Wartezeit und schickt Transporter unnötig durchs Lager – beides pflanzt sich
-kaskadenartig fort** – und eine zonenübergreifend koordinierte Disposition vermeidet
+kaskadenartig fort** – und ein zonenübergreifend koordiniertes Dispatching vermeidet
 das systematisch. Hauptkriterium für alle fünf Verfahren ist dabei die
 **Gesamtdurchlaufzeit**: Umstiegs-Wartezeit und Repositionierung sind keine eigenen
 Ziele, sondern Ursachen, die sich in dieser einen Zahl niederschlagen und in der App
@@ -41,7 +41,7 @@ und OR-Tools blenden zusätzlich einen kleinen Verspätungs-/Dringlichkeitsterm 
 (siehe unten) – Pünktlichkeit bleibt dabei ein mitgewichteter Nebenaspekt derselben
 Zielfunktion, kein zweites, gleichrangiges Ziel.
 
-Fünf Dispositionsverfahren im direkten Vergleich, alle auf demselben Lagergraphen und mit
+Fünf Dispatching-Verfahren im direkten Vergleich, alle auf demselben Lagergraphen und mit
 derselben Kennzahlen-Berechnung ausgewertet:
 
 - **Unoptimiert (FCFS):** keine Prioritätslogik, wer zuerst bereit ist, wird zuerst bedient.
@@ -66,7 +66,7 @@ derselben Kennzahlen-Berechnung ausgewertet:
   Szenarien).
 - **GRASP:** Greedy Randomized Adaptive Search Procedure (Feo/Resende 1989/1995), gebaut
   direkt auf Koordiniert's ATCS-Index statt ihn zu ersetzen. Konstruktion: dieselbe
-  ATCS-Formel, aber jede Dispositionsentscheidung wählt zufällig aus den `RCL_SIZE`
+  ATCS-Formel, aber jede Dispatching-Entscheidung wählt zufällig aus den `RCL_SIZE`
   bestbewerteten bereiten Legs (Restricted Candidate List) statt strikt dem besten –
   `GRASP_ITERATIONS` unabhängige, randomisierte Simulationsläufe, der beste wird
   behalten. Lokale Suche danach: bis zu `LOCAL_SEARCH_MOVES` zufällige Ein-Leg-Störungen
@@ -100,7 +100,7 @@ derselben Kennzahlen-Berechnung ausgewertet:
   stattdessen die Lokalsuche selbst durch echte Swap-Züge + Iterated Local Search zu
   ersetzen, brachte keine verlässliche Verbesserung bei fast doppelter Laufzeit und
   wurde wieder verworfen – das Lookahead-Fenster wirkt auf einer unabhängigen Achse
-  (WANN disponiert wird, nicht WELCHER Kandidat gewinnt).
+  (WANN dispatcht wird, nicht WELCHER Kandidat gewinnt).
 - **OR-Tools (CP-SAT):** jeder Leg ist ein Intervall fester Dauer. Da die
   Repositionierungszeit davon abhängt, WELCHER Transporter einen Leg übernimmt, bekommt
   jeder Leg eine Maschinen-Variable (welcher der $c_z$ Transporter der Zone), und für
@@ -135,7 +135,7 @@ gesetzte Prioritäten in der Praxis oft schlicht nicht respektiert.
   keine Pauschale. Im Gantt-Chart als helle, schraffierte Balken vor dem eigentlichen Leg
   sichtbar.
 - Kern-Kennzahl für den Vergleich ist die **Gesamtdurchlaufzeit** – das Hauptkriterium,
-  nach dem alle fünf Verfahren disponieren und verglichen werden. Umstiegs-Wartezeit und
+  nach dem alle fünf Verfahren dispatchen und verglichen werden. Umstiegs-Wartezeit und
   Repositionierung tauchen nur noch in einer Aufschlüsselung (gestapeltes Balkendiagramm:
   reine Fahrzeit / feste Umstiegszeit / Warten) als Erklärung auf, woraus sich diese eine
   Zahl zusammensetzt – nicht mehr als eigene KPI-Kachel oder eigenes Vergleichschart.
@@ -174,7 +174,7 @@ Verschiedene Themen im Portfolio teilen (fast) dasselbe Modell. Vor einer neuen 
 Modell vergleichen, nicht die Kulisse (Stand 2026-09-23):
 
 - **Parallele Maschinen mit Fristen (gewichtete Fertigstellung + Verspätung, ATCS, CP-SAT als Referenz):** diese
-  Demo ist der Referenzfall. Dasselbe Modell steckt in jeder Freigabe- oder Dispositionsfrage mit Fristen, z. B.
+  Demo ist der Referenzfall. Dasselbe Modell steckt in jeder Freigabe- oder Dispatching-Frage mit Fristen, z. B.
   Kommissionierwellen mit Versandfristen (offene Erweiterung der `order_batch-demo`, dort mit Kommissionierern als
   Maschinen). Befunde wie das Lookahead-Fenster (bewusste Leerzeit) und die Lücke zu CP-SAT sind dort zu erwarten.
 - Vorab-Messreihe (2026-09-23) für die Kombination mit Gangkonflikten (mehrere Kommissionierer, Blockieren in
